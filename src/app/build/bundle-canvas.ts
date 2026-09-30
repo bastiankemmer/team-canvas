@@ -116,17 +116,21 @@ function virtualCanvasPlugin(source: string, workingDir: string): esbuild.Plugin
 
 /** Exported for CRAP edge tests. */
 export function formatEsbuildErrors(err: object): string {
-  const errors = (err as { errors?: Array<{ text?: string }> }).errors
+  const errors = (
+    err as {
+      errors?: Array<{ text?: string; location?: { line: number; column: number } | null }>
+    }
+  ).errors
   if (!errors?.length) return 'Bundle failed'
-  return errors.map((e) => e.text ?? 'error').join('\n')
+  return errors
+    .map((e) => `${e.location ? `${e.location.line}:${e.location.column + 1} ` : ''}${e.text ?? 'error'}`)
+    .join('\n')
 }
 
 /** Exported for CRAP edge tests. */
 export function bundleFailureMessage(err: unknown): string {
+  if (typeof err === 'object' && err && 'errors' in err) return formatEsbuildErrors(err)
   if (err instanceof Error) return err.message
-  if (typeof err === 'object' && err && 'errors' in err) {
-    return formatEsbuildErrors(err)
-  }
   return String(err)
 }
 
@@ -143,6 +147,11 @@ export async function bundleCanvas(opts: {
   const sdkPath = opts.sdkPath ?? defaultSdkPath()
   const source = opts.source
   const workingDir = opts.workingDir ?? pkgRoot()
+
+  // ponytail: regex gate before esbuild; ceiling = exotic re-exports; upgrade = esbuild export analysis
+  if (!/\bexport\s+default\b/.test(source) && !/\bexport\s*\{[^}]*\bas\s+default\b/.test(source)) {
+    return { ok: false, error: 'Canvas must default-export a React component' }
+  }
 
   try {
     const result = await esbuild.build({

@@ -132,4 +132,24 @@ describe("canvas edit ops", () => {
     await expect(ops.replaceInSource("../x", "a", "b")).rejects.toThrow(/Invalid canvas id/);
     expect(await ops.listCanvases()).toEqual(["big"]);
   });
+
+  it("checkCanvas: ok for a good canvas; syntax error, bad import and missing default export come back as messages, not throws", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-check-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const put = (id: string, src: string) => writeFile(path.join(root, `${id}.canvas.tsx`), src, "utf8");
+    await put("good", "export default function A() { return <div>ok</div> }\n");
+    await put("syntax", "export default function A() {\n  return <div>\n}\n");
+    await put("import", 'import x from "lodash"\nexport default function A() { return <div>{x}</div> }\n');
+    await put("nodefault", "export function A() { return null }\n");
+
+    expect(await ops.checkCanvas("good")).toEqual({ ok: true, id: "good" });
+    const syntax = await ops.checkCanvas("syntax");
+    expect(syntax).toMatchObject({ ok: false, id: "syntax" });
+    expect(syntax.ok === false && syntax.error).toMatch(/^\d+:\d+ /);
+    const imp = await ops.checkCanvas("import");
+    expect(imp.ok === false && imp.error).toContain('Import "lodash" is not allowed');
+    const nd = await ops.checkCanvas("nodefault");
+    expect(nd.ok === false && nd.error).toContain("default-export");
+    await expect(ops.checkCanvas("missing")).rejects.toThrow();
+  });
 });

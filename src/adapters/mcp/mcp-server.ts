@@ -76,6 +76,16 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
     },
   },
   {
+    name: "check_canvas",
+    description:
+      "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+  },
+  {
     name: "search_source",
     description: "Search one canvas source; returns line + snippet matches",
     inputSchema: {
@@ -184,6 +194,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       requireString(args, "new_string"),
       args.replace_all === true,
     ),
+  check_canvas: (ops, args) => ops.checkCanvas(requireString(args, "id")),
   search_source: (ops, args) =>
     ops.searchSource(requireString(args, "id"), requireString(args, "query")),
   inspect_orientation: (ops, args) =>

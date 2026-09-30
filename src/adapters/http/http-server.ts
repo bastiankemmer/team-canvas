@@ -231,14 +231,6 @@ export async function startHttpServer(
     const hit = bundleCache.get(id)
     if (hit && hit.key === key) return { ok: true, js: hit.js }
 
-    // ponytail: regex gate before esbuild; ceiling = exotic re-exports; upgrade = esbuild export analysis
-    if (!/\bexport\s+default\b/.test(source) && !/\bexport\s*\{[^}]*\bas\s+default\b/.test(source)) {
-      const error = 'Canvas must default-export a React component'
-      console.error(`[team-canvas] bundle ${id}:`, error)
-      bundleCache.delete(id)
-      return { ok: false, error }
-    }
-
     const result = await bundleCanvas({ source })
     if (!result.ok) {
       console.error(`[team-canvas] bundle ${id}:`, result.error)
@@ -454,7 +446,7 @@ export async function startHttpServer(
 
         // Shared edit ops (thin JSON/text over createCanvasEditOps).
         const editMatch =
-          /^\/api\/canvas\/([^/]+)\/(source|replace|search|orientation|add-oriented|fill-slots)\/?$/.exec(
+          /^\/api\/canvas\/([^/]+)\/(source|check|replace|search|orientation|add-oriented|fill-slots)\/?$/.exec(
             pathName,
           )
         if (editMatch) {
@@ -487,6 +479,17 @@ export async function startHttpServer(
               res.end(source)
             } catch (err) {
               replyOpsError(err, 'Failed to read canvas source')
+            }
+            return
+          }
+
+          if (action === 'check' && method === 'GET') {
+            try {
+              const checked = await ops.checkCanvas(id)
+              res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+              res.end(JSON.stringify(checked))
+            } catch (err) {
+              replyOpsError(err, 'Failed to check canvas')
             }
             return
           }

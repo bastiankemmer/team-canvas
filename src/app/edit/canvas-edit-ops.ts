@@ -8,6 +8,7 @@ import {
   type OrientSlot,
   type OrientationInfo,
 } from "./canvas-orientation.js";
+import { bundleCanvas } from "../build/bundle-canvas.js";
 import { assertNewCanvasId, starterSource } from "./new-canvas.js";
 
 export type SearchHit = { line: number; snippet: string };
@@ -23,6 +24,11 @@ export type CreateResult = { ok: true; id: string };
 /** Reply for replace: same `{ ok, id, replacements }` over HTTP and MCP. */
 export type ReplaceResult = { ok: true; id: string; replacements: number };
 
+/** Same reply for check, over HTTP and MCP: does the canvas still bundle? */
+export type CheckResult =
+  | { ok: true; id: string }
+  | { ok: false; id: string; error: string };
+
 export type CanvasEditOps = {
   listCanvases(): Promise<string[]>;
   /** New canvas from `source`, or a starter file. Refuses an id that already exists. */
@@ -36,6 +42,8 @@ export type CanvasEditOps = {
     newText: string,
     replaceAll?: boolean,
   ): Promise<ReplaceResult>;
+  /** Bundle the canvas and report errors (`line:col message`) instead of throwing. */
+  checkCanvas(id: string): Promise<CheckResult>;
   searchSource(id: string, query: string): Promise<SearchHit[]>;
   inspectOrientation(id: string): Promise<OrientationInfo>;
   addOriented(id: string): Promise<SlotsResult>;
@@ -58,6 +66,10 @@ export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
     },
     readSource: (id) => store.readSource(id),
     writeSource: (id, source) => store.writeSource(id, source),
+    async checkCanvas(id) {
+      const result = await bundleCanvas({ source: await store.readSource(id) });
+      return result.ok ? { ok: true, id } : { ok: false, id, error: result.error };
+    },
     async replaceInSource(id, oldText, newText, replaceAll = false) {
       if (!oldText) {
         throw new Error("old_string must be non-empty");

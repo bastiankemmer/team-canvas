@@ -59,6 +59,7 @@ Planned:
 | `POST /api/canvas` | Upload. Header `X-Canvas-Name: my.canvas.tsx`, `text/plain` body. Returns `201 {"id": "my"}`. |
 | `GET` / `PUT /api/canvas/:id/source` | Read or replace the whole source. |
 | `POST /api/canvas/:id/replace` | Replace exact text in place, without rewriting the file. JSON body `{"old_string": "...", "new_string": "...", "replace_all"?: true}`. `200 {"ok": true, "id": "...", "replacements": 1}`; `400` if the text is not found or matches more than once (unless `replace_all`). |
+| `GET /api/canvas/:id/check` | Does the canvas still build? `200 {"ok": true, "id": "..."}` or `{"ok": false, "id": "...", "error": "12:5 ..."}`. |
 | `GET /api/canvas/:id/search?q=` | Search one canvas source. |
 | `GET /api/canvas/:id/orientation` | Repeating pattern and whether Add is available. |
 | `POST /api/canvas/:id/add-oriented`, `/fill-slots` | Oriented Add. |
@@ -70,7 +71,7 @@ Planned:
 npx team-canvas mcp ./canvases          # stdio server
 ```
 
-Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. Use `search_source` to keep context small instead of reading whole files, and `replace_in_source` to change part of a canvas: `write_source` replaces the entire file.
+Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `check_canvas`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. Use `search_source` to keep context small instead of reading whole files, and `replace_in_source` to change part of a canvas: `write_source` replaces the entire file. Call `check_canvas` after edits: it returns build errors as `line:col message`.
 
 Example MCP client config (`mcp.json`):
 
