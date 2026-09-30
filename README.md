@@ -47,6 +47,7 @@ Planned:
 - Login plugins for the `Auth` port: password and OIDC.
 - More stores for the `CanvasStore` port: FTP and Samba, to load a canvas from a server, edit it and upload it back.
 - Realtime collaboration on the same canvas.
+- Agent collaboration: an agent leases a write lock on a canvas before it may write and releases it when done, so other agents can read a consistent canvas. HTTP and MCP tools to acquire, release and inspect the lease, with a timeout so a crashed agent cannot hold a canvas forever.
 - Sessions: upload a canvas and invite collaborators, with MCP support for those sessions.
 - A connector for `useCanvasAction` (open agent, open file, new chat), which is a logged no-op today.
 
