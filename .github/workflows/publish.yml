@@ -1,0 +1,45 @@
+# Publishes to npm when you push a version tag (v0.1.1, v0.2.0, ...).
+#
+# One-time setup on npmjs.com: package -> Settings -> Trusted Publisher -> GitHub Actions:
+#   owner bastiankemmer, repository team-canvas, workflow filename publish.yml
+# No NPM_TOKEN secret is needed; npm trusts this workflow through OIDC.
+#
+# Release:  npm version patch && git push --follow-tags
+name: Publish to npm
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # lets npm verify this workflow (trusted publishing)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@latest
+
+      - name: Tag must match package.json version
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          test "$v" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME does not match package.json ($v)"; exit 1; }
+
+      - run: npm ci
+
+      # prepublishOnly rebuilds dist and runs the tests before anything is published.
+      - name: Publish
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) npm publish --tag next ;; # prerelease, e.g. v0.2.0-beta.1
+            *)   npm publish ;;
+          esac
