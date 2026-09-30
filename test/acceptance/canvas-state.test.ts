@@ -2,13 +2,13 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createHttpCanvasStateStore } from '../app/canvas-state-bridge.js'
+import { createHttpCanvasStateStore } from '../../src/client/canvas-state-bridge.js'
 import {
   startHttpServer,
   type RunningServer,
-} from './http-server.js'
-import type { CanvasStore } from '../ports/canvas-store.js'
-import { LocalFilesystemCanvasStore } from './local-fs-canvas-store.js'
+} from '../../src/adapters/http/http-server.js'
+import type { CanvasStore } from '../../src/ports/canvas-store.js'
+import { LocalFilesystemCanvasStore } from '../../src/adapters/store/local-fs-canvas-store.js'
 
 describe('viewer useCanvasState persistence', () => {
   const servers: RunningServer[] = []

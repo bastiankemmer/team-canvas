@@ -7,9 +7,9 @@ import {
   DEFAULT_HOST,
   DEFAULT_PORT,
   startHttpServer,
-} from './adapters/http-server.js'
-import { startMcpStdioServer } from './adapters/mcp-server.js'
-import { convertCanvasSource } from './app/convert-canvas.js'
+} from './adapters/http/http-server.js'
+import { startMcpStdioServer } from './adapters/mcp/mcp-server.js'
+import { convertCanvasSource } from './app/convert/convert-canvas.js'
 
 export const CLI_USAGE = `Usage: team-canvas serve <root> [--host <host>] [--port <port>]
        team-canvas mcp <canvases-root>
@@ -190,7 +190,8 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
   throw new Error(CLI_USAGE)
 }
 
-const entry = process.argv[1]
+// realpath: `npx team-canvas` runs through a node_modules/.bin symlink.
+const entry = process.argv[1] && fs.realpathSync(process.argv[1])
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   runCli().catch((err) => {
     console.error(err instanceof Error ? err.message : err)

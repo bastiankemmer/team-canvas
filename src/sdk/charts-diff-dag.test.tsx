@@ -11,7 +11,7 @@ import {
   LineChart,
   PieChart,
   computeDAGLayout,
-} from "../sdk/index.js";
+} from "./index.js";
 
 afterEach(() => {
   document.body.replaceChildren();

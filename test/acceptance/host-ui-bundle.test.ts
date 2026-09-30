@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   startHttpServer,
   type RunningServer,
-} from './http-server.js'
+} from '../../src/adapters/http/http-server.js'
 
 describe('host UI + canvas bundle pipeline', () => {
   const servers: RunningServer[] = []

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canvasPaletteDark,
   canvasPaletteLight,
-} from "../sdk/canvas-tokens.js";
+} from "../../sdk/canvas-tokens.js";
 import {
   editShellHtml,
   escapeHtml,
@@ -106,11 +106,10 @@ describe("host-ui shell HTML markers", () => {
     expect(edit).toContain("EventSource");
     expect(edit).toContain('href="/canvas/demo">View</a>');
     expect(edit).toContain('href="/">Canvases</a>');
-    // Boot rehydrates Fill chrome from leftover `__tc_slot_*__` tokens after reload.
-    expect(edit).toContain("slotsFromSource");
-    expect(edit).toContain("__tc_slot_");
-    expect(edit).toContain("wrapperTagForSlot");
-    expect(edit).toContain("Button label");
+    // Boot rehydrates Fill chrome from the orientation slots (id + label from the server).
+    expect(edit).toContain("orientInfo.slots");
+    expect(edit).toContain("slot.label");
+    expect(edit).not.toContain("wrapperTagForSlot");
     expect(edit).toContain("placeholder tokens until you apply");
     expect(edit).toContain("role=\"status\"");
     expect(edit).toContain('role="tablist"');

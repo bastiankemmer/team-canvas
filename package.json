@@ -1,21 +1,30 @@
 {
   "name": "team-canvas",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "version": "0.1.0",
+  "description": "Self-hosted server that renders .canvas.tsx files (one React component per file) in the browser, with a live editor and an MCP server for AI agents.",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "rm -rf dist && npm run build && npm test"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "canvas",
+    "react",
+    "tsx",
+    "mcp",
+    "self-hosted",
+    "editor"
+  ],
+  "author": "bastiankemmer",
   "license": "MIT",
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "src/sdk",
+    "src/client",
+    "!**/*.test.*"
+  ],
   "exports": {
     "./package.json": "./package.json",
     "./canvas": {
@@ -25,7 +34,18 @@
     }
   },
   "bin": {
-    "team-canvas": "./dist/cli.js"
+    "team-canvas": "dist/cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bastiankemmer/team-canvas.git"
+  },
+  "homepage": "https://github.com/bastiankemmer/team-canvas#readme",
+  "bugs": {
+    "url": "https://github.com/bastiankemmer/team-canvas/issues"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "peerDependencies": {
     "react": "^19.3.0",
@@ -40,12 +60,12 @@
     "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "^4.0.0",
     "jsdom": "^29.1.1",
-    "typescript": "^5.8.0",
     "vitest": "^4.0.0"
   },
   "dependencies": {
     "esbuild": "^0.28.2",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "typescript": "^5.8.0"
   }
 }

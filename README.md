@@ -2,33 +2,53 @@
 
 A self-hosted server that renders `.canvas.tsx` files in the browser, so a team can view, share and edit them. A canvas is one React component in one file that imports from `"team-canvas/canvas"`.
 
+## Install
+
+```sh
+npm install -g team-canvas               # gives you the `team-canvas` command
+# or, inside a project (also needed to import "team-canvas/canvas" in your own React app):
+npm install team-canvas react react-dom
+```
+
+Or skip the install and run it with `npx team-canvas ...`. Needs Node 20 or newer.
+
 ## Quick start
 
 ```sh
-npm ci
-npm run build
-node dist/cli.js serve ./canvases        # http://0.0.0.0:3847
+team-canvas serve ./canvases            # or: npx team-canvas serve ./canvases
+                                        # http://0.0.0.0:3847
 ```
 
-`<root>` is a folder of `*.canvas.tsx` files. Open the URL, upload a canvas or drop files into the folder, and click **Open**. Use `--host` and `--port` to change the bind address (default `0.0.0.0:3847`).
-To get a `team-canvas` command on your PATH, run `npm link` after building.
+`./canvases` is a folder of `*.canvas.tsx` files. Open the URL, upload a canvas or drop files into the folder, and click **Open**. Use `--host` and `--port` to change the bind address (default `0.0.0.0:3847`).
+
+New here? [Getting started](docs/getting-started.md) walks through it with screenshots.
 
 Canvases written against another canvas module can be converted. The command rewrites that module's import path to `team-canvas/canvas` in place (recursive for directories):
 
 ```sh
-team-canvas convert --from <old-module> ./canvases
-# or: node dist/cli.js convert --from <old-module> path/to/file.canvas.tsx
+npx team-canvas convert --from <old-module> ./canvases
 ```
 
 ## What you get
 
-- **Library** at `/`: lists canvases, upload by button or drag and drop, Open, Edit and Copy link per canvas.- **Viewer** at `/canvas/:id`: renders the canvas and rebuilds live when the file changes.
+- **Library** at `/`: lists canvases, upload by button or drag and drop, Open, Edit and Copy link per canvas.
+- **Viewer** at `/canvas/:id`: renders the canvas and rebuilds live when the file changes.
 - **Editor** at `/canvas/:id/edit` with a **UI | Code** switch:
   - **UI**: live preview plus *Oriented Add*. It finds a repeating block in the canvas (for example a `Card` with a `Button`), clones it with blank slots, and you fill in the text. The result is real `.canvas.tsx` source, with the same handlers wired.
   - **Code**: a full source editor next to the preview. Save with the button or Cmd/Ctrl+S. Build errors show in the status line.
 - **State**: `useCanvasState` values are stored next to the canvas as `<name>.canvas.data.json`, so everyone opening the canvas sees the same state.
 - **MCP server** so AI agents can read, search and edit canvases (see below).
 - **Convert** CLI: `team-canvas convert --from <old-module> <path>...` rewrites another canvas module's imports to `"team-canvas/canvas"`.
+
+## Roadmap
+
+Planned:
+
+- Login plugins for the `Auth` port: password and OIDC.
+- More stores for the `CanvasStore` port: FTP and Samba, to load a canvas from a server, edit it and upload it back.
+- Realtime collaboration on the same canvas.
+- Sessions: upload a canvas and invite collaborators, with MCP support for those sessions.
+- A connector for `useCanvasAction` (open agent, open file, new chat), which is a logged no-op today.
 
 ### HTTP API
 
@@ -44,7 +64,7 @@ team-canvas convert --from <old-module> ./canvases
 ## MCP for AI agents
 
 ```sh
-node dist/cli.js mcp ./canvases          # stdio server
+npx team-canvas mcp ./canvases          # stdio server
 ```
 
 Tools: `list_canvases`, `read_source`, `write_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. Use `search_source` to keep context small instead of reading whole files.
@@ -55,8 +75,8 @@ Example MCP client config (`mcp.json`):
 {
   "mcpServers": {
     "team-canvas": {
-      "command": "node",
-      "args": ["/absolute/path/to/team-canvas/dist/cli.js", "mcp", "/absolute/path/to/canvases"]
+      "command": "npx",
+      "args": ["-y", "team-canvas", "mcp", "/absolute/path/to/canvases"]
     }
   }
 }
@@ -78,9 +98,9 @@ Outside the server, `useCanvasState` is plain in-memory state.
 
 Ports and adapters, so storage and login can be swapped without touching the rest:
 
-- `CanvasStore` port (`src/ports`): list, read and write source and state. Shipped adapter: local filesystem. New stores (FTP, Samba, S3, ...) only need to implement this port.
+- `CanvasStore` port (`src/ports`, adapters under `src/adapters/{store,auth,http,mcp}`): list, read and write source and state. Shipped adapter: local filesystem. New stores (FTP, Samba, S3, ...) only need to implement this port.
 - `Auth` port: shipped adapter `DisabledAuthAdapter` (no login, the default). Add your own for password or OIDC.
-- Shared edit operations (`src/app`) are used by both the HTTP and the MCP adapters.
+- Shared edit operations (`src/app/edit`) are used by both the HTTP and the MCP adapters, and return the same result shape (`{ ok, id, slots }`, slots as `{ id, label }` in document order).
 - The SDK (`src/sdk`) provides the `team-canvas/canvas` surface: layout, forms, charts, diff view, todo list, DAG layout and theme hooks.
 
 ## Security
@@ -91,7 +111,7 @@ By default the server binds `0.0.0.0` with **no login**. Anyone who can reach it
 
 - `useCanvasAction` (open agent, open file, new chat) is a logged no-op until a connector is configured.
 - Styling is the team-canvas default theme.
-- One store adapter (local filesystem) and no built-in login yet. No realtime collaboration yet.
+- One store adapter (local filesystem), no built-in login and no realtime collaboration yet (see the roadmap).
 
 ## Development
 
@@ -99,6 +119,7 @@ By default the server binds `0.0.0.0` with **no login**. Anyone who can reach it
 npm ci
 npm run build       # tsc
 npm test            # vitest
+node dist/cli.js serve ./canvases
 ```
 
 ## License

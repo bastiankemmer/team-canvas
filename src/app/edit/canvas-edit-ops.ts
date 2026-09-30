@@ -1,8 +1,9 @@
-import type { CanvasStore } from "../ports/canvas-store.js";
+import type { CanvasStore } from "../../ports/canvas-store.js";
 import {
   addOrientedSibling,
   applySlotFills,
   inspectSourceOrientation,
+  pendingSlots,
   slotIdsFromSource,
   type OrientSlot,
   type OrientationInfo,
@@ -12,14 +13,17 @@ export type SearchHit = { line: number; snippet: string };
 
 export type { OrientationInfo, OrientSlot };
 
+/** Same reply for add and fill, over HTTP and MCP: slots still blank afterwards. */
+export type SlotsResult = { ok: true; id: string; slots: OrientSlot[] };
+
 export type CanvasEditOps = {
   listCanvases(): Promise<string[]>;
   readSource(id: string): Promise<string>;
   writeSource(id: string, source: string): Promise<void>;
   searchSource(id: string, query: string): Promise<SearchHit[]>;
   inspectOrientation(id: string): Promise<OrientationInfo>;
-  addOriented(id: string): Promise<{ slots: OrientSlot[] }>;
-  fillSlots(id: string, slots: Record<string, string>): Promise<void>;
+  addOriented(id: string): Promise<SlotsResult>;
+  fillSlots(id: string, slots: Record<string, string>): Promise<SlotsResult>;
 };
 
 /** Shared read/write/search/orient over CanvasStore — HTTP and MCP call only this. */
@@ -50,7 +54,7 @@ export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
       const source = await store.readSource(id);
       const { source: next, slots } = addOrientedSibling(source);
       await store.writeSource(id, next);
-      return { slots };
+      return { ok: true, id, slots };
     },
     async fillSlots(id, slots) {
       const source = await store.readSource(id);
@@ -59,6 +63,7 @@ export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
       const next = applySlotFills(source, slots, known);
       await store.writeSource(id, next);
       // Leftover `__tc_slot_*__` tokens remain fillable; no process-wide expire.
+      return { ok: true, id, slots: pendingSlots(next) };
     },
   };
 }

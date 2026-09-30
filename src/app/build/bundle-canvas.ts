@@ -26,8 +26,8 @@ export function isBarePackageImport(specifier: string): boolean {
 }
 
 function pkgRoot(): string {
-  // src/app or dist/app → package root → always compile from src/
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+  // src/app/build or dist/app/build → package root → always compile from src/
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 }
 
 /** Absolute path to team-canvas SDK barrel (aliased as "team-canvas/canvas"). */
@@ -40,7 +40,7 @@ function hooksPath(): string {
 }
 
 function stateBridgePath(): string {
-  return path.join(pkgRoot(), 'src/app/canvas-state-bridge.ts')
+  return path.join(pkgRoot(), 'src/client/canvas-state-bridge.ts')
 }
 
 export type BundleOk = { ok: true; js: string }
@@ -142,9 +142,7 @@ export async function bundleCanvas(opts: {
 }): Promise<BundleResult> {
   const sdkPath = opts.sdkPath ?? defaultSdkPath()
   const source = opts.source
-  const workingDir =
-    opts.workingDir ??
-    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+  const workingDir = opts.workingDir ?? pkgRoot()
 
   try {
     const result = await esbuild.build({

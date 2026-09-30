@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   startHttpServer,
   type RunningServer,
-} from './http-server.js'
+} from '../../src/adapters/http/http-server.js'
 
 const examplesRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

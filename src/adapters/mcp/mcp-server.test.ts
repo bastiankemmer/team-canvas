@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { createCanvasEditOps } from "../app/canvas-edit-ops.js";
-import { CLI_USAGE, parseMcpArgs, runCli } from "../cli.js";
-import { LocalFilesystemCanvasStore } from "./local-fs-canvas-store.js";
+import { createCanvasEditOps } from "../../app/edit/canvas-edit-ops.js";
+import { CLI_USAGE, parseMcpArgs, runCli } from "../../cli.js";
+import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
 import {
   callMcpTool,
   encodeMcpMessage,
@@ -117,14 +117,17 @@ describe("mcp stdio server", () => {
     const addBody = JSON.parse(add.content[0]!.text) as {
       ok: boolean;
       id: string;
-      slots: Array<{ id: string }>;
+      slots: Array<{ id: string; label: string }>;
     };
     expect(addBody).toEqual({
       ok: true,
       id: "demo",
-      slots: expect.arrayContaining([expect.objectContaining({ id: expect.any(String) })]),
+      slots: [
+        { id: expect.any(String), label: "Card header" },
+        { id: expect.any(String), label: "Text" },
+        { id: expect.any(String), label: "Button label" },
+      ],
     });
-    expect(addBody.slots.length).toBeGreaterThan(0);
     const afterAdd = await readFile(
       path.join(root, "demo.canvas.tsx"),
       "utf8",
@@ -138,7 +141,11 @@ describe("mcp stdio server", () => {
       slots: fillMap,
     });
     expect(fill.isError).toBeFalsy();
-    expect(JSON.parse(fill.content[0]!.text)).toEqual({ ok: true, id: "demo" });
+    expect(JSON.parse(fill.content[0]!.text)).toEqual({
+      ok: true,
+      id: "demo",
+      slots: [],
+    });
 
     const missing = await callMcpTool(ops, "read_source", {
       id: "no-such-canvas",

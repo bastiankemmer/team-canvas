@@ -2,13 +2,15 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { LocalFilesystemCanvasStore } from "../adapters/local-fs-canvas-store.js";
-import { bundleCanvas } from "./bundle-canvas.js";
+import { LocalFilesystemCanvasStore } from "../../adapters/store/local-fs-canvas-store.js";
+import { bundleCanvas } from "../build/bundle-canvas.js";
 import { createCanvasEditOps } from "./canvas-edit-ops.js";
 import {
   addOrientedSibling,
   applySlotFills,
   inspectSourceOrientation,
+  pendingSlots,
+  slotIdsFromSource,
 } from "./canvas-orientation.js";
 
 const TWO_CARDS = `import { Button, Card, CardBody, CardHeader, Stack, Text } from "team-canvas/canvas";
@@ -61,10 +63,15 @@ describe("canvas oriented edit", () => {
     const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
 
     const orientation = await ops.inspectOrientation("cards");
-    expect(orientation).toEqual({ kind: "Card", addAvailable: true });
+    expect(orientation).toEqual({ kind: "Card", addAvailable: true, slots: [] });
 
-    const { slots } = await ops.addOriented("cards");
-    expect(slots.length).toBeGreaterThan(0);
+    const added = await ops.addOriented("cards");
+    const { slots } = added;
+    expect(added).toMatchObject({ ok: true, id: "cards" });
+    // Document order, labelled by the wrapping element.
+    expect(slots.map((s) => s.label)).toEqual(["Card header", "Text", "Button label"]);
+    // Blank slots are discoverable later without remembering the add reply.
+    expect((await ops.inspectOrientation("cards")).slots).toEqual(slots);
 
     const afterAdd = await ops.readSource("cards");
     expect(afterAdd.match(/<Card>/g)?.length).toBe(3);
@@ -84,9 +91,14 @@ describe("canvas oriented edit", () => {
     slots.forEach((s, i) => {
       fills[s.id] = values[i] ?? `v${i}`;
     });
-    await ops.fillSlots("cards", fills);
+    const fillResult = await ops.fillSlots("cards", fills);
+    expect(fillResult).toEqual({ ok: true, id: "cards", slots: [] });
 
     const filled = await ops.readSource("cards");
+    // Values were given in slot order: header, text, button.
+    expect(filled).toMatch(/<CardHeader>Gamma<\/CardHeader>/);
+    expect(filled).toMatch(/<Text>Body gamma<\/Text>/);
+    expect(filled).toMatch(/<Button onClick=\{onAct\}>Go gamma<\/Button>/);
     expect(filled).toContain("Gamma");
     expect(filled).toContain("Body gamma");
     expect(filled).toContain("Go gamma");
@@ -152,6 +164,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation(mixed)).toEqual({
       kind: "Card",
       addAvailable: true,
+      slots: [],
     });
     const { source, slots } = addOrientedSibling(mixed);
     expect(source.match(/<Card>/g)?.length).toBe(4);
@@ -168,6 +181,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation("export default function X() { return null }")).toEqual({
       kind: null,
       addAvailable: false,
+      slots: [],
     });
   });
 
@@ -186,6 +200,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation(lowerOnly)).toEqual({
       kind: null,
       addAvailable: false,
+      slots: [],
     });
 
     // $ is ID_Start but codepoint < 'A' — must not count as component.
@@ -201,6 +216,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation(dollar)).toEqual({
       kind: null,
       addAvailable: false,
+      slots: [],
     });
 
     // Inclusive A: `> 'A'` mutant rejects this run.
@@ -216,6 +232,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation(onlyA)).toEqual({
       kind: "A",
       addAvailable: true,
+      slots: [],
     });
 
     // Inclusive Z: `< 'Z'` mutant rejects this run.
@@ -231,6 +248,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation(onlyZ)).toEqual({
       kind: "Z",
       addAvailable: true,
+      slots: [],
     });
 
     // Same depth: longer run wins (three Text over two Card).
@@ -249,6 +267,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation(longer)).toEqual({
       kind: "Text",
       addAvailable: true,
+      slots: [],
     });
 
     // Same depth, equal length: keep earlier run (not `>=` replace).
@@ -266,6 +285,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation(tie)).toEqual({
       kind: "Card",
       addAvailable: true,
+      slots: [],
     });
 
     // Deeper shorter run beats shallower longer (depth comparison, not length-only).
@@ -286,6 +306,7 @@ describe("canvas oriented edit", () => {
     expect(inspectSourceOrientation(deeper)).toEqual({
       kind: "Card",
       addAvailable: true,
+      slots: [],
     });
 
     // Tab indent preserved on cloned sibling.
@@ -411,7 +432,7 @@ describe("canvas oriented edit", () => {
       inspectSourceOrientation(
         `function NotDefault() { return (<Stack><Card>a</Card><Card>b</Card></Stack>); }`,
       ),
-    ).toEqual({ kind: null, addAvailable: false });
+    ).toEqual({ kind: null, addAvailable: false, slots: [] });
 
     // Named export with a pattern must not win over missing default.
     expect(
@@ -419,7 +440,7 @@ describe("canvas oriented edit", () => {
         `export function Named() { return (<Stack><Card>a</Card><Card>b</Card></Stack>); }
 export default function D() { return null; }`,
       ),
-    ).toEqual({ kind: null, addAvailable: false });
+    ).toEqual({ kind: null, addAvailable: false, slots: [] });
 
     // ExpressionStatement before return must not be treated as the returned tree.
     expect(
@@ -429,7 +450,7 @@ export default function D() { return null; }`,
   return (<Stack><Card>a</Card><Card>b</Card></Stack>);
 }`,
       ),
-    ).toEqual({ kind: "Card", addAvailable: true });
+    ).toEqual({ kind: "Card", addAvailable: true, slots: [] });
 
     // Member tag names (not Identifier) are skipped by tagName.
     const member = `export default function M() {
@@ -446,6 +467,7 @@ export default function D() { return null; }`,
     expect(inspectSourceOrientation(member)).toEqual({
       kind: "Card",
       addAvailable: true,
+      slots: [],
     });
 
     // Default function with empty return expression is not a pattern.
@@ -453,7 +475,7 @@ export default function D() { return null; }`,
       inspectSourceOrientation(
         `export default function E() { return; }`,
       ),
-    ).toEqual({ kind: null, addAvailable: false });
+    ).toEqual({ kind: null, addAvailable: false, slots: [] });
 
     // Unknown slot id rejected even when a matching token exists in source
     // (knownIds.has guard — not only the includes(token) check).
@@ -468,5 +490,31 @@ export default function D() { return null; }`,
     expect(
       applySlotFills(withTok, { abc123: "yes" }, new Set(["abc123"])),
     ).toBe("hello yes world");
+  });
+  it("pendingSlots: document order, labels from the wrapper, repeats numbered, partial fill keeps the rest", () => {
+    const src = `import { Card, CardBody, CardHeader, Stack, Text } from "team-canvas/canvas";
+export default function C() {
+  return (
+    <Stack>
+      <Card>
+        <CardHeader>__tc_slot_aaa__</CardHeader>
+        <CardBody>
+          <Text>__tc_slot_bbb__</Text>
+          <Text>{"__tc_slot_ccc__"}</Text>
+        </CardBody>
+      </Card>
+    </Stack>
+  );
+}
+`;
+    expect(pendingSlots(src)).toEqual([
+      { id: "aaa", label: "Card header" },
+      { id: "bbb", label: "Text 1" },
+      { id: "ccc", label: "Text 2" },
+    ]);
+    const next = applySlotFills(src, { bbb: "B" }, slotIdsFromSource(src));
+    expect(pendingSlots(next).map((s) => s.id)).toEqual(["aaa", "ccc"]);
+    // Same id twice is one slot; tokens outside JSX are not slots.
+    expect(pendingSlots(`const x = "__tc_slot_zzz__";\nexport default function C(){return <p/>}`)).toEqual([]);
   });
 });
