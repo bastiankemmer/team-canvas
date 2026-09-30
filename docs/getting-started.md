@@ -16,9 +16,11 @@ No global install? `npx team-canvas serve ./canvases` does the same. To import `
 
 `./canvases` is the folder the server reads. Use `--host 127.0.0.1` to keep it on your machine and `--port` to change the port. There is no login, so read the security note in the [README](../README.md#security) before exposing it.
 
-## 2. Write a canvas
+## 2. Create a canvas
 
-Create `canvases/hello.canvas.tsx`:
+Open the server URL, type a name in **New canvas** and press **New**. team-canvas writes a starter file into your folder and opens it in the editor, ready to change. Names use letters, digits, `-` and `_`, and an existing name is never overwritten.
+
+Or write the file yourself. Create `canvases/hello.canvas.tsx`:
 
 ```tsx
 import { Button, H1, Stack, Text, useCanvasState } from "team-canvas/canvas";
@@ -39,9 +41,9 @@ A canvas has one default-exported component and imports everything it needs from
 
 ## 3. The library
 
-Open the server URL. The library lists every canvas in the folder. You can also **upload** a `.canvas.tsx` with the button or by dropping it on the page. Each canvas has **Open**, **Edit** and **Copy link**.
+Open the server URL. The library lists every canvas in the folder. Besides **New**, you can **upload** a `.canvas.tsx` with the button or by dropping it on the page. Each canvas has **Open**, **Edit** and **Copy link**.
 
-![Library page listing three canvases with Open, Edit and Copy link](images/library.png)
+![Library page with the New canvas form, upload, and three canvases with Open, Edit and Copy link](images/library.png)
 
 ## 4. The viewer
 
@@ -86,7 +88,7 @@ The same edit operations are available to agents over MCP (stdio):
 }
 ```
 
-Tools: `list_canvases`, `read_source`, `write_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. Tell the agent to use `search_source` instead of reading whole files to keep its context small. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.
+Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. `create_canvas` takes an `id` and an optional `source`; without a source it writes the same starter canvas as the New button, and it fails if the id already exists. Tell the agent to use `search_source` instead of reading whole files to keep its context small. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.
 
 ## 7. Use a canvas in a normal React app
 

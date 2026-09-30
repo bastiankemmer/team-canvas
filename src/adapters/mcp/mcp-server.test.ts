@@ -62,6 +62,7 @@ describe("mcp stdio server", () => {
     const toolNames = MCP_TOOL_DEFS.map((t) => t.name);
     expect(toolNames).toEqual([
       "list_canvases",
+      "create_canvas",
       "read_source",
       "write_source",
       "search_source",
@@ -313,6 +314,7 @@ describe("mcp stdio server", () => {
     // Schema shapes are part of the MCP contract (not description copy).
     expect(MCP_TOOL_DEFS.map((t) => t.name)).toEqual([
       "list_canvases",
+      "create_canvas",
       "read_source",
       "write_source",
       "search_source",
@@ -655,5 +657,33 @@ describe("parseMcpArgs", () => {
       /Unexpected extra argument/,
     );
     expect(parseMcpArgs(["mcp", "/tmp/x"])).toEqual({ root: "/tmp/x" });
+  });
+
+  it("create_canvas: writes a starter or the given source, same { ok, id } as HTTP, refuses duplicates and bad ids", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-new-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+
+    const made = await callMcpTool(ops, "create_canvas", { id: "fresh" });
+    expect(made.isError).toBeFalsy();
+    expect(JSON.parse(made.content[0]!.text)).toEqual({ ok: true, id: "fresh" });
+    const starter = await readFile(path.join(root, "fresh.canvas.tsx"), "utf8");
+    expect(starter).toContain("export default function Fresh()");
+
+    const custom = "export default function C() { return null }\n";
+    await callMcpTool(ops, "create_canvas", { id: "mine", source: custom });
+    expect(await readFile(path.join(root, "mine.canvas.tsx"), "utf8")).toBe(custom);
+
+    const dup = await callMcpTool(ops, "create_canvas", { id: "fresh" });
+    expect(dup.isError).toBe(true);
+    expect(dup.content[0]!.text).toMatch(/already exists/);
+    // The existing canvas was not touched.
+    expect(await readFile(path.join(root, "fresh.canvas.tsx"), "utf8")).toBe(starter);
+
+    for (const bad of ["../x", "a/b", "", "-x", "a b"]) {
+      const r = await callMcpTool(ops, "create_canvas", { id: bad });
+      expect(r.isError, bad).toBe(true);
+    }
+    const noId = await callMcpTool(ops, "create_canvas", {});
+    expect(noId.isError).toBe(true);
   });
 });

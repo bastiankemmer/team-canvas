@@ -336,6 +336,42 @@ export async function startHttpServer(
           return
         }
 
+        if (pathName === '/api/canvas/new' && method === 'POST') {
+          let id = ''
+          let source: string | undefined
+          try {
+            const body = JSON.parse(await readRequestBody(req)) as {
+              id?: unknown
+              source?: unknown
+            }
+            id = typeof body.id === 'string' ? body.id : ''
+            source = typeof body.source === 'string' ? body.source : undefined
+          } catch {
+            res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+            res.end('Body must be JSON: {"id": "my-canvas", "source"?: "..."}')
+            return
+          }
+          try {
+            const created = await withOwnSourceWrite(id, () =>
+              ops.createCanvas(id, source),
+            )
+            res.writeHead(201, {
+              'content-type': 'application/json; charset=utf-8',
+            })
+            res.end(JSON.stringify(created))
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Failed to create canvas'
+            const status = /already exists/.test(msg)
+              ? 409
+              : isInvalidCanvasId(err)
+                ? 400
+                : 500
+            res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' })
+            res.end(msg)
+          }
+          return
+        }
+
         if (pathName === '/' || pathName === '/index.html') {
           const ids = await store.list()
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })

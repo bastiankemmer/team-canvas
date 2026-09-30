@@ -636,6 +636,52 @@ export default function Solo() {
     await wait
     await reader.cancel().catch(() => undefined)
   })
+
+  it('@task-new: POST /api/canvas/new creates a starter or given source; 409 on existing, 400 on bad id or body; library has a New form', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-new-'))
+    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    servers.push(server)
+    const store = LocalFilesystemCanvasStore(root)
+    const post = (body: string) =>
+      fetch(`${server.url}/api/canvas/new`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      })
+
+    const created = await post(JSON.stringify({ id: 'my-canvas' }))
+    expect(created.status).toBe(201)
+    expect(await created.json()).toEqual({ ok: true, id: 'my-canvas' })
+    const starter = await store.readSource('my-canvas')
+    expect(starter).toContain('export default function MyCanvas()')
+    // The starter renders in the viewer.
+    const view = await fetch(`${server.url}/canvas/my-canvas`)
+    expect(view.status).toBe(200)
+    expect(await view.text()).not.toContain('"kind":"error"')
+
+    const custom = 'export default function C() { return <p>hi</p> }\n'
+    expect((await post(JSON.stringify({ id: 'given', source: custom }))).status).toBe(201)
+    expect(await store.readSource('given')).toBe(custom)
+
+    const dup = await post(JSON.stringify({ id: 'my-canvas', source: 'x' }))
+    expect(dup.status).toBe(409)
+    expect(await dup.text()).toMatch(/already exists/)
+    expect(await store.readSource('my-canvas')).toBe(starter)
+
+    for (const bad of ['../x', 'a/b', '', '-x', 'a b']) {
+      expect((await post(JSON.stringify({ id: bad }))).status, bad).toBe(400)
+    }
+    expect((await post('not json')).status).toBe(400)
+    expect((await post('{}')).status).toBe(400)
+    expect(
+      (await fetch(`${server.url}/api/canvas/new`, { method: 'GET' })).status,
+    ).not.toBe(201)
+
+    const index = await (await fetch(`${server.url}/`)).text()
+    expect(index).toContain('data-new-form')
+    expect(index).toContain('>New</button>')
+    expect(index).toContain('my-canvas')
+  })
 })
 
 describe('parseCanvasUploadName', () => {

@@ -8,6 +8,7 @@ import {
   type OrientSlot,
   type OrientationInfo,
 } from "./canvas-orientation.js";
+import { assertNewCanvasId, starterSource } from "./new-canvas.js";
 
 export type SearchHit = { line: number; snippet: string };
 
@@ -16,8 +17,13 @@ export type { OrientationInfo, OrientSlot };
 /** Same reply for add and fill, over HTTP and MCP: slots still blank afterwards. */
 export type SlotsResult = { ok: true; id: string; slots: OrientSlot[] };
 
+/** Reply for create: same `{ ok, id }` over HTTP and MCP. */
+export type CreateResult = { ok: true; id: string };
+
 export type CanvasEditOps = {
   listCanvases(): Promise<string[]>;
+  /** New canvas from `source`, or a starter file. Refuses an id that already exists. */
+  createCanvas(id: string, source?: string): Promise<CreateResult>;
   readSource(id: string): Promise<string>;
   writeSource(id: string, source: string): Promise<void>;
   searchSource(id: string, query: string): Promise<SearchHit[]>;
@@ -30,6 +36,16 @@ export type CanvasEditOps = {
 export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
   return {
     listCanvases: () => store.list(),
+    async createCanvas(id, source) {
+      assertNewCanvasId(id);
+      // ponytail: list-then-write can race with a parallel create of the same id;
+      // fix with an exclusive-create (`wx`) on the store port if that ever matters.
+      if ((await store.list()).includes(id)) {
+        throw new Error(`Canvas "${id}" already exists`);
+      }
+      await store.writeSource(id, source?.trim() ? source : starterSource(id));
+      return { ok: true, id };
+    },
     readSource: (id) => store.readSource(id),
     writeSource: (id, source) => store.writeSource(id, source),
     async searchSource(id, query) {

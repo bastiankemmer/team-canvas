@@ -26,6 +26,19 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "create_canvas",
+    description:
+      "Create a new canvas. Optional source; without it a starter canvas is written. Fails if the id already exists",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        source: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "read_source",
     description: "Read full .canvas.tsx source for an id",
     inputSchema: {
@@ -137,6 +150,11 @@ type ToolHandler = (
 
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_canvases: (ops) => ops.listCanvases(),
+  create_canvas: (ops, args) =>
+    ops.createCanvas(
+      requireString(args, "id"),
+      typeof args.source === "string" ? args.source : undefined,
+    ),
   read_source: (ops, args) => ops.readSource(requireString(args, "id")),
   write_source: async (ops, args) => {
     const id = requireString(args, "id");

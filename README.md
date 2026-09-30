@@ -31,7 +31,7 @@ npx team-canvas convert --from <old-module> ./canvases
 
 ## What you get
 
-- **Library** at `/`: lists canvases, upload by button or drag and drop, Open, Edit and Copy link per canvas.
+- **Library** at `/`: lists canvases. **New** creates a canvas from a name and opens it in the editor; upload by button or drag and drop; Open, Edit and Copy link per canvas.
 - **Viewer** at `/canvas/:id`: renders the canvas and rebuilds live when the file changes.
 - **Editor** at `/canvas/:id/edit` with a **UI | Code** switch:
   - **UI**: live preview plus *Oriented Add*. It finds a repeating block in the canvas (for example a `Card` with a `Button`), clones it with blank slots, and you fill in the text. The result is real `.canvas.tsx` source, with the same handlers wired.
@@ -54,6 +54,7 @@ Planned:
 
 | Method and path | Purpose |
 | --- | --- |
+| `POST /api/canvas/new` | Create. JSON body `{"id": "my-canvas", "source"?: "..."}`; without `source` a starter canvas is written. `201 {"ok": true, "id": "my-canvas"}`, `409` if it exists, `400` for a bad id. |
 | `POST /api/canvas` | Upload. Header `X-Canvas-Name: my.canvas.tsx`, `text/plain` body. Returns `201 {"id": "my"}`. |
 | `GET` / `PUT /api/canvas/:id/source` | Read or replace the source. |
 | `GET /api/canvas/:id/search?q=` | Search one canvas source. |
@@ -67,7 +68,7 @@ Planned:
 npx team-canvas mcp ./canvases          # stdio server
 ```
 
-Tools: `list_canvases`, `read_source`, `write_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. Use `search_source` to keep context small instead of reading whole files.
+Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. Use `search_source` to keep context small instead of reading whole files.
 
 Example MCP client config (`mcp.json`):
 

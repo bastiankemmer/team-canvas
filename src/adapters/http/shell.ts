@@ -147,6 +147,21 @@ main.viewer-main {
   word-break: break-all;
 }
 .upload-actions { margin-top: var(--gap); }
+.new-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+}
+.new-input {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+  min-width: 14rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
 .btn {
   font: inherit;
   font-size: 0.9rem;
@@ -462,6 +477,44 @@ const copyShareScript = String.raw`
 `.trim()
 
 const libraryScript = String.raw`
+(function () {
+  var form = document.querySelector("[data-new-form]");
+  var input = document.querySelector("[data-new-input]");
+  var statusEl = document.querySelector("[data-new-status]");
+  if (!form || !input || !statusEl) return;
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var id = input.value.trim().replace(/\.canvas\.tsx$/i, "");
+    statusEl.removeAttribute("data-tone");
+    if (!id) {
+      statusEl.textContent = "Enter a name.";
+      statusEl.setAttribute("data-tone", "error");
+      return;
+    }
+    var submit = form.querySelector("[type=submit]");
+    if (submit) submit.disabled = true;
+    statusEl.textContent = "Creating…";
+    fetch("/api/canvas/new", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: id }),
+    }).then(function (res) {
+      if (res.status === 201) {
+        location.href = "/canvas/" + encodeURIComponent(id) + "/edit";
+        return;
+      }
+      return res.text().then(function (body) {
+        statusEl.textContent = body || ("Create failed (" + res.status + ").");
+        statusEl.setAttribute("data-tone", "error");
+        if (submit) submit.disabled = false;
+      });
+    }).catch(function (err) {
+      statusEl.textContent = String(err && err.message ? err.message : err);
+      statusEl.setAttribute("data-tone", "error");
+      if (submit) submit.disabled = false;
+    });
+  });
+})();
 (function () {
   var form = document.querySelector("[data-upload-form]");
   var statusEl = document.querySelector("[data-upload-status]");
@@ -967,6 +1020,15 @@ function canvasHeader(canvasId: string, mode: 'view' | 'edit'): string {
 
 /** Index: upload + library from stored canvas ids. */
 export function indexShellHtml(canvasIds: string[]): string {
+  const create = `<section class="upload" aria-labelledby="new-heading">
+  <div class="upload-label" id="new-heading">New canvas</div>
+  <form class="new-form" data-new-form>
+    <input class="new-input" data-new-input type="text" name="id" placeholder="my-canvas" aria-label="Canvas name" autocomplete="off" />
+    <button class="btn btn-primary" type="submit">New</button>
+  </form>
+  <p class="status" data-new-status role="status"></p>
+</section>`
+
   const upload = `<section class="upload" aria-labelledby="upload-heading">
   <div class="upload-label" id="upload-heading">Upload a canvas</div>
   <form data-upload-form>
@@ -985,7 +1047,7 @@ export function indexShellHtml(canvasIds: string[]): string {
 
   const list =
     canvasIds.length === 0
-      ? `<p class="status" data-shell="index">No canvases yet. Upload a .canvas.tsx file to get started.</p>`
+      ? `<p class="status" data-shell="index">No canvases yet. Create one with New or upload a .canvas.tsx file.</p>`
       : `<ul class="canvas-list" data-shell="index">${canvasIds
           .map((id) => {
             const safe = escapeHtml(id)
@@ -1003,7 +1065,7 @@ export function indexShellHtml(canvasIds: string[]): string {
           })
           .join('')}</ul>`
 
-  const body = `<div class="library">${upload}${list}</div>`
+  const body = `<div class="library">${create}${upload}${list}</div>`
   return page(
     'Canvases',
     body,
