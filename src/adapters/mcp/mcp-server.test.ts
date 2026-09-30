@@ -66,6 +66,7 @@ describe("mcp stdio server", () => {
       "read_source",
       "write_source",
       "replace_in_source",
+      "check_canvas",
       "search_source",
       "inspect_orientation",
       "add_oriented",
@@ -319,6 +320,7 @@ describe("mcp stdio server", () => {
       "read_source",
       "write_source",
       "replace_in_source",
+      "check_canvas",
       "search_source",
       "inspect_orientation",
       "add_oriented",
@@ -731,5 +733,23 @@ describe("parseMcpArgs", () => {
       const r = await callMcpTool(ops, "replace_in_source", args);
       expect(r.isError, JSON.stringify(args)).toBe(true);
     }
+  });
+
+  it("check_canvas: reports ok, then a build error with line:col after a bad edit; missing id is an error", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-check-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    await writeFile(path.join(root, "demo.canvas.tsx"), "export default function A() { return <div>hi</div> }\n", "utf8");
+
+    const good = await callMcpTool(ops, "check_canvas", { id: "demo" });
+    expect(good.isError).toBe(false);
+    expect(JSON.parse(good.content[0]!.text)).toEqual({ ok: true, id: "demo" });
+
+    await callMcpTool(ops, "replace_in_source", { id: "demo", old_string: "</div>", new_string: "" });
+    const bad = JSON.parse((await callMcpTool(ops, "check_canvas", { id: "demo" })).content[0]!.text);
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toMatch(/^\d+:\d+ /);
+
+    expect((await callMcpTool(ops, "check_canvas", { id: "nope" })).isError).toBe(true);
+    expect((await callMcpTool(ops, "check_canvas", {})).isError).toBe(true);
   });
 });

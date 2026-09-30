@@ -684,6 +684,22 @@ export default function Solo() {
     expect(index).toContain('my-canvas')
   })
 
+  it('GET /api/canvas/:id/check returns { ok, id } or { ok: false, id, error }; 404 for unknown canvas', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-check-'))
+    const store = LocalFilesystemCanvasStore(root)
+    await store.writeSource('good', 'export default function A() { return <div>ok</div> }\n')
+    await store.writeSource('bad', 'export default function A() { return <div> }\n')
+    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    servers.push(server)
+    const get = async (id: string) => fetch(`${server.url}/api/canvas/${id}/check`)
+
+    expect(await (await get('good')).json()).toEqual({ ok: true, id: 'good' })
+    const bad = (await (await get('bad')).json()) as { ok: boolean; error: string }
+    expect(bad.ok).toBe(false)
+    expect(bad.error).toMatch(/^\d+:\d+ /)
+    expect((await get('nope')).status).toBe(404)
+  })
+
   it('@task-replace: POST /api/canvas/:id/replace edits in place (200 { ok, id, replacements }); 400 for ambiguous, missing or bad body; 404 for unknown canvas', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-replace-'))
     const store = LocalFilesystemCanvasStore(root)
