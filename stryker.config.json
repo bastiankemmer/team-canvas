@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "mutate": [
+    "src/app/canvas-edit-ops.ts",
+    "src/app/canvas-orientation.ts",
+    "src/adapters/mcp-server.ts"
+  ],
+  "timeoutMS": 60000,
+  "concurrency": 4,
+  "vitest": {
+    "configFile": "vitest.stryker.config.ts",
+    "related": false
+  },
+  "reporters": ["html", "clear-text", "json"],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation-report.json"
+  }
+}
