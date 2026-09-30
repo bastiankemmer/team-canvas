@@ -125,9 +125,10 @@ describe("host-ui shell HTML markers", () => {
     expect(edit).not.toContain("Raw source");
     expect(edit).toContain("Oriented Add");
     expect(edit).toContain("Fill slots");
-    // Stage / #root padding facts unchanged (do not restyle SDK).
+    // Stage gutter stays 0; #root owns content inset via --stage-pad (not SDK).
     expect(edit).toMatch(/\.stage\s*\{[^}]*padding:\s*0;/s);
-    expect(edit).toMatch(/#root\s*\{[^}]*padding:\s*0\.75rem;/s);
+    expect(edit).toMatch(/--stage-pad:\s*clamp\(/);
+    expect(edit).toMatch(/#root\s*\{[^}]*padding:\s*var\(--stage-pad\);/s);
     // Split view: preview stage before the edit column in document order.
     const chromeAt = edit.indexOf("data-edit-chrome");
     const stageAt = edit.indexOf('class="stage"');

@@ -602,7 +602,8 @@ export default function Solo() {
     expect(editHtml).toContain('/watch')
     expect(editHtml).toContain(JSON.stringify('demo'))
     expect(editHtml).toMatch(/\.stage\s*\{[^}]*padding:\s*0;/s)
-    expect(editHtml).toMatch(/#root\s*\{[^}]*padding:\s*0\.75rem;/s)
+    expect(editHtml).toMatch(/--stage-pad:\s*clamp\(/)
+    expect(editHtml).toMatch(/#root\s*\{[^}]*padding:\s*var\(--stage-pad\);/s)
 
     const missingEdit = await fetch(`${server.url}/canvas/no-such/edit`)
     expect(missingEdit.status).toBe(404)

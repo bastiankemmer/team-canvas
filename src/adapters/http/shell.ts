@@ -26,7 +26,8 @@ const chrome = String.raw`
   --radius-sm: 0.5rem;
   --control-h: 2.375rem;
   --content-max: 76rem;
-  --stage-max: 64rem;
+  --stage-max: 80rem;
+  --stage-pad: clamp(1.25rem, 2.5vw, 1.75rem);
   --sidebar-w: 22rem;
   --font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -407,7 +408,7 @@ label.btn:focus-visible {
 }
 #root {
   min-height: 4rem;
-  padding: 0.75rem;
+  padding: var(--stage-pad);
   background: ${canvasPaletteLight.editor};
 }
 @media (prefers-color-scheme: dark) {
