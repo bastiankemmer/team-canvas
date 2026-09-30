@@ -4,7 +4,7 @@ import path from 'node:path'
 import type { Auth } from '../../ports/auth.js'
 import type { CanvasStore } from '../../ports/canvas-store.js'
 import { bundleCanvas } from '../../app/build/bundle-canvas.js'
-import { createCanvasEditOps, type SlotsResult } from '../../app/edit/canvas-edit-ops.js'
+import { createCanvasEditOps, type ReplaceResult, type SlotsResult } from '../../app/edit/canvas-edit-ops.js'
 import { createAuthAdapter } from '../auth/create-auth.js'
 import {
   assertSafeCanvasId,
@@ -454,7 +454,7 @@ export async function startHttpServer(
 
         // Shared edit ops (thin JSON/text over createCanvasEditOps).
         const editMatch =
-          /^\/api\/canvas\/([^/]+)\/(source|search|orientation|add-oriented|fill-slots)\/?$/.exec(
+          /^\/api\/canvas\/([^/]+)\/(source|replace|search|orientation|add-oriented|fill-slots)\/?$/.exec(
             pathName,
           )
         if (editMatch) {
@@ -469,7 +469,7 @@ export async function startHttpServer(
             const msg = err instanceof Error ? err.message : fallback
             const badClient =
               isInvalidCanvasId(err) ||
-              /non-empty|no repeating sibling pattern|unknown or expired/i.test(
+              /non-empty|no repeating sibling pattern|unknown or expired|not found in canvas|matches \d+ places/i.test(
                 msg,
               )
             res.writeHead(badClient ? 400 : 500, {
@@ -548,6 +548,35 @@ export async function startHttpServer(
             } catch (err) {
               replyOpsError(err, 'Failed to add oriented sibling')
             }
+            return
+          }
+
+          if (action === 'replace' && method === 'POST') {
+            let body: { old_string?: unknown; new_string?: unknown; replace_all?: unknown }
+            try {
+              body = JSON.parse(await readRequestBody(req)) as typeof body
+            } catch {
+              body = {}
+            }
+            if (typeof body.old_string !== 'string' || typeof body.new_string !== 'string') {
+              res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+              res.end('Body must be JSON: {"old_string": "...", "new_string": "...", "replace_all"?: true}')
+              return
+            }
+            const { old_string, new_string } = body
+            let replaced: ReplaceResult
+            try {
+              replaced = await withOwnSourceWrite(id, () =>
+                ops.replaceInSource(id, old_string, new_string, body.replace_all === true),
+              )
+            } catch (err) {
+              replyOpsError(err, 'Failed to replace text')
+              return
+            }
+            res.writeHead(200, {
+              'content-type': 'application/json; charset=utf-8',
+            })
+            res.end(JSON.stringify(replaced))
             return
           }
 

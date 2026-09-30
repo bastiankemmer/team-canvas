@@ -65,6 +65,7 @@ describe("mcp stdio server", () => {
       "create_canvas",
       "read_source",
       "write_source",
+      "replace_in_source",
       "search_source",
       "inspect_orientation",
       "add_oriented",
@@ -317,6 +318,7 @@ describe("mcp stdio server", () => {
       "create_canvas",
       "read_source",
       "write_source",
+      "replace_in_source",
       "search_source",
       "inspect_orientation",
       "add_oriented",
@@ -685,5 +687,49 @@ describe("parseMcpArgs", () => {
     }
     const noId = await callMcpTool(ops, "create_canvas", {});
     expect(noId.isError).toBe(true);
+  });
+
+  it("replace_in_source: edits in place with the same { ok, id, replacements } as HTTP; ambiguous, missing and malformed calls are errors", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-replace-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const file = path.join(root, "demo.canvas.tsx");
+    await writeFile(file, TWO_CARDS, "utf8");
+
+    const ok = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      old_string: "Go alpha",
+      new_string: "Go first",
+    });
+    expect(ok.isError).toBeFalsy();
+    expect(JSON.parse(ok.content[0]!.text)).toEqual({ ok: true, id: "demo", replacements: 1 });
+    expect(await readFile(file, "utf8")).toBe(TWO_CARDS.replace("Go alpha", "Go first"));
+
+    const after = await readFile(file, "utf8");
+    const ambiguous = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      old_string: "<Card>",
+      new_string: "<Card >",
+    });
+    expect(ambiguous.isError).toBe(true);
+    expect(ambiguous.content[0]!.text).toMatch(/matches 2 places/);
+    const all = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      old_string: "<Card>",
+      new_string: "<Card >",
+      replace_all: true,
+    });
+    expect(JSON.parse(all.content[0]!.text).replacements).toBe(2);
+    expect(await readFile(file, "utf8")).toBe(after.split("<Card>").join("<Card >"));
+
+    for (const args of [
+      { id: "demo", old_string: "absent", new_string: "x" },
+      { id: "demo", old_string: "", new_string: "x" },
+      { id: "demo", old_string: "Alpha" },
+      { old_string: "a", new_string: "b" },
+      { id: "nope", old_string: "a", new_string: "b" },
+    ]) {
+      const r = await callMcpTool(ops, "replace_in_source", args);
+      expect(r.isError, JSON.stringify(args)).toBe(true);
+    }
   });
 });

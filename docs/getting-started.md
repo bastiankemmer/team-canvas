@@ -88,7 +88,7 @@ The same edit operations are available to agents over MCP (stdio):
 }
 ```
 
-Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. `create_canvas` takes an `id` and an optional `source`; without a source it writes the same starter canvas as the New button, and it fails if the id already exists. Tell the agent to use `search_source` instead of reading whole files to keep its context small. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.
+Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. `create_canvas` takes an `id` and an optional `source`; without a source it writes the same starter canvas as the New button, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Reading whole files wastes context. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.
 
 ## 7. Use a canvas in a normal React app
 

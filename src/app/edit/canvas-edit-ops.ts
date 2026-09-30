@@ -20,12 +20,22 @@ export type SlotsResult = { ok: true; id: string; slots: OrientSlot[] };
 /** Reply for create: same `{ ok, id }` over HTTP and MCP. */
 export type CreateResult = { ok: true; id: string };
 
+/** Reply for replace: same `{ ok, id, replacements }` over HTTP and MCP. */
+export type ReplaceResult = { ok: true; id: string; replacements: number };
+
 export type CanvasEditOps = {
   listCanvases(): Promise<string[]>;
   /** New canvas from `source`, or a starter file. Refuses an id that already exists. */
   createCanvas(id: string, source?: string): Promise<CreateResult>;
   readSource(id: string): Promise<string>;
   writeSource(id: string, source: string): Promise<void>;
+  /** Replace exact text in place; the rest of the file stays byte-identical. */
+  replaceInSource(
+    id: string,
+    oldText: string,
+    newText: string,
+    replaceAll?: boolean,
+  ): Promise<ReplaceResult>;
   searchSource(id: string, query: string): Promise<SearchHit[]>;
   inspectOrientation(id: string): Promise<OrientationInfo>;
   addOriented(id: string): Promise<SlotsResult>;
@@ -48,6 +58,25 @@ export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
     },
     readSource: (id) => store.readSource(id),
     writeSource: (id, source) => store.writeSource(id, source),
+    async replaceInSource(id, oldText, newText, replaceAll = false) {
+      if (!oldText) {
+        throw new Error("old_string must be non-empty");
+      }
+      const source = await store.readSource(id);
+      // split/join: literal text, so "$&" and friends in newText are not special.
+      const parts = source.split(oldText);
+      const replacements = parts.length - 1;
+      if (replacements === 0) {
+        throw new Error(`Text to replace was not found in canvas "${id}"`);
+      }
+      if (replacements > 1 && !replaceAll) {
+        throw new Error(
+          `Text to replace matches ${replacements} places in canvas "${id}"; add surrounding text to make it unique, or set replace_all`,
+        );
+      }
+      await store.writeSource(id, parts.join(newText));
+      return { ok: true, id, replacements };
+    },
     async searchSource(id, query) {
       if (!query) {
         throw new Error("Search query must be non-empty");

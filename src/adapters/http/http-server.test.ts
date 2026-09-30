@@ -682,6 +682,43 @@ export default function Solo() {
     expect(index).toContain('>New</button>')
     expect(index).toContain('my-canvas')
   })
+
+  it('@task-replace: POST /api/canvas/:id/replace edits in place (200 { ok, id, replacements }); 400 for ambiguous, missing or bad body; 404 for unknown canvas', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-replace-'))
+    const store = LocalFilesystemCanvasStore(root)
+    await store.writeSource('doc', 'one two two three\n')
+    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    servers.push(server)
+    const post = (id: string, body: string) =>
+      fetch(`${server.url}/api/canvas/${id}/replace`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      })
+
+    const ok = await post('doc', JSON.stringify({ old_string: 'one', new_string: '1' }))
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toEqual({ ok: true, id: 'doc', replacements: 1 })
+    expect(await store.readSource('doc')).toBe('1 two two three\n')
+
+    const ambiguous = await post('doc', JSON.stringify({ old_string: 'two', new_string: '2' }))
+    expect(ambiguous.status).toBe(400)
+    expect(await ambiguous.text()).toMatch(/matches 2 places/)
+    expect(await store.readSource('doc')).toBe('1 two two three\n')
+
+    const all = await post('doc', JSON.stringify({ old_string: 'two', new_string: '2', replace_all: true }))
+    expect(await all.json()).toEqual({ ok: true, id: 'doc', replacements: 2 })
+    expect(await store.readSource('doc')).toBe('1 2 2 three\n')
+
+    expect((await post('doc', JSON.stringify({ old_string: 'zzz', new_string: 'x' }))).status).toBe(400)
+    expect((await post('doc', JSON.stringify({ old_string: '', new_string: 'x' }))).status).toBe(400)
+    expect((await post('doc', JSON.stringify({ old_string: 'a' }))).status).toBe(400)
+    expect((await post('doc', 'not json')).status).toBe(400)
+    expect((await post('missing-id', JSON.stringify({ old_string: 'a', new_string: 'b' }))).status).toBe(404)
+    expect(
+      (await fetch(`${server.url}/api/canvas/doc/replace`)).status,
+    ).not.toBe(200)
+  })
 })
 
 describe('parseCanvasUploadName', () => {

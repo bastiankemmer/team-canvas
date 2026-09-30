@@ -87,4 +87,49 @@ describe("canvas edit ops", () => {
     }
     expect(await ops.listCanvases()).toHaveLength(3);
   });
+
+  it("replaceInSource: swaps exact text, leaves the rest byte-identical, refuses missing or ambiguous matches unless replace_all", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-replace-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const big = "// header\n" + "const filler = 1;\n".repeat(5000);
+    const original = `${big}<Text>Alpha</Text>\n<Text>Beta</Text>\n<Text>Beta</Text>\n${big}`;
+    await writeFile(path.join(root, "big.canvas.tsx"), original, "utf8");
+    const read = () => readFile(path.join(root, "big.canvas.tsx"), "utf8");
+
+    // Unique match: only that text changes, everything else identical.
+    expect(await ops.replaceInSource("big", "<Text>Alpha</Text>", "<Text>Alpha 2</Text>")).toEqual({
+      ok: true,
+      id: "big",
+      replacements: 1,
+    });
+    expect(await read()).toBe(original.replace("<Text>Alpha</Text>", "<Text>Alpha 2</Text>"));
+
+    // Ambiguous: refused, file untouched, message says how to fix.
+    const before = await read();
+    await expect(ops.replaceInSource("big", "<Text>Beta</Text>", "<Text>B</Text>")).rejects.toThrow(
+      /matches 2 places.*replace_all/,
+    );
+    expect(await read()).toBe(before);
+
+    // Missing text and empty old string: refused, file untouched.
+    await expect(ops.replaceInSource("big", "nope-not-here", "x")).rejects.toThrow(/not found in canvas "big"/);
+    await expect(ops.replaceInSource("big", "", "x")).rejects.toThrow(/non-empty/);
+    expect(await read()).toBe(before);
+
+    // replace_all handles every match; "$&" style text in the replacement is literal.
+    expect(
+      await ops.replaceInSource("big", "<Text>Beta</Text>", "<Text>$&$1</Text>", true),
+    ).toEqual({ ok: true, id: "big", replacements: 2 });
+    expect((await read()).match(/<Text>\$&\$1<\/Text>/g)).toHaveLength(2);
+
+    // Empty new string deletes the text.
+    await ops.replaceInSource("big", "<Text>Alpha 2</Text>\n", "");
+    expect(await read()).not.toContain("Alpha 2");
+    expect(await read()).toContain("<Text>$&$1</Text>");
+
+    // Unknown canvas and unsafe id are errors, nothing is created.
+    await expect(ops.replaceInSource("ghost", "a", "b")).rejects.toThrow();
+    await expect(ops.replaceInSource("../x", "a", "b")).rejects.toThrow(/Invalid canvas id/);
+    expect(await ops.listCanvases()).toEqual(["big"]);
+  });
 });

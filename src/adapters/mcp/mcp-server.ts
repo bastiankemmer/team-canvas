@@ -49,7 +49,8 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   },
   {
     name: "write_source",
-    description: "Replace entire .canvas.tsx source for an id",
+    description:
+      "Replace the ENTIRE .canvas.tsx source for an id. For a change to part of a canvas use replace_in_source instead",
     inputSchema: {
       type: "object",
       properties: {
@@ -57,6 +58,21 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
         source: { type: "string" },
       },
       required: ["id", "source"],
+    },
+  },
+  {
+    name: "replace_in_source",
+    description:
+      "Replace exact text in a canvas without rewriting the file. Fails if old_string is not found, or matches more than once unless replace_all is true. Use search_source to find the text; prefer this over write_source for changes to large canvases",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        old_string: { type: "string" },
+        new_string: { type: "string" },
+        replace_all: { type: "boolean" },
+      },
+      required: ["id", "old_string", "new_string"],
     },
   },
   {
@@ -161,6 +177,13 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     await ops.writeSource(id, requireString(args, "source"));
     return { ok: true, id };
   },
+  replace_in_source: (ops, args) =>
+    ops.replaceInSource(
+      requireString(args, "id"),
+      requireString(args, "old_string"),
+      requireString(args, "new_string"),
+      args.replace_all === true,
+    ),
   search_source: (ops, args) =>
     ops.searchSource(requireString(args, "id"), requireString(args, "query")),
   inspect_orientation: (ops, args) =>
