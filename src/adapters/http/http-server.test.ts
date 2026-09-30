@@ -3,8 +3,8 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Auth } from '../ports/auth.js'
-import type { CanvasStore } from '../ports/canvas-store.js'
+import type { Auth } from '../../ports/auth.js'
+import type { CanvasStore } from '../../ports/canvas-store.js'
 import {
   assertReadableRoot,
   attachCleanShutdown,
@@ -15,8 +15,8 @@ import {
   type RunningServer,
   parseCanvasUploadName,
 } from './http-server.js'
-import { LocalFilesystemCanvasStore } from './local-fs-canvas-store.js'
-import { parseServeArgs } from '../cli.js'
+import { LocalFilesystemCanvasStore } from '../store/local-fs-canvas-store.js'
+import { parseServeArgs } from '../../cli.js'
 
 describe('team-canvas serve', () => {
   const servers: RunningServer[] = []
@@ -444,14 +444,29 @@ export default function OrientedDemo() {
 
     const orient = await fetch(`${server.url}/api/canvas/cards/orientation`)
     expect(orient.status).toBe(200)
-    expect(await orient.json()).toEqual({ kind: 'Card', addAvailable: true })
+    expect(await orient.json()).toEqual({
+      kind: 'Card',
+      addAvailable: true,
+      slots: [],
+    })
 
     const added = await fetch(`${server.url}/api/canvas/cards/add-oriented`, {
       method: 'POST',
     })
     expect(added.status).toBe(200)
-    const { slots } = (await added.json()) as { slots: { id: string }[] }
-    expect(slots.length).toBeGreaterThan(0)
+    const addBody = (await added.json()) as {
+      ok: boolean
+      id: string
+      slots: { id: string; label: string }[]
+    }
+    const { slots } = addBody
+    expect(addBody.ok).toBe(true)
+    expect(addBody.id).toBe('cards')
+    expect(slots.map((s) => s.label)).toEqual([
+      'Card header',
+      'Text',
+      'Button label',
+    ])
     expect((await store.readSource('cards')).match(/<Card>/g)?.length).toBe(3)
 
     const fills: Record<string, string> = {}
@@ -463,7 +478,8 @@ export default function OrientedDemo() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(fills),
     })
-    expect(filled.status).toBe(204)
+    expect(filled.status).toBe(200)
+    expect(await filled.json()).toEqual({ ok: true, id: 'cards', slots: [] })
     const afterFill = await store.readSource('cards')
     expect(afterFill).toContain('Filled-0')
 

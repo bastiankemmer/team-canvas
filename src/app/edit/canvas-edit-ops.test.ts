@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { LocalFilesystemCanvasStore } from "../adapters/local-fs-canvas-store.js";
+import { LocalFilesystemCanvasStore } from "../../adapters/store/local-fs-canvas-store.js";
 import { createCanvasEditOps } from "./canvas-edit-ops.js";
 
 describe("canvas edit ops", () => {

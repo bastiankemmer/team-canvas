@@ -1,4 +1,4 @@
-import type { Auth } from '../ports/auth.js'
+import type { Auth } from '../../ports/auth.js'
 import { createDisabledAuthAdapter } from './disabled-auth.js'
 
 /** Named login-protocol adapters; only `disabled` ships in v1. */

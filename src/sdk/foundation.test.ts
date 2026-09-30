@@ -12,7 +12,7 @@ import {
   categoryPaletteDark,
   colorPalette,
   usageColorSequence,
-} from "../sdk/index.js";
+} from "./index.js";
 import {
   provideCanvasStateStore,
   provideHostTheme,
@@ -21,8 +21,8 @@ import {
   useHostTheme,
   type CanvasAction,
   type CanvasHostTheme,
-} from "../sdk/hooks.js";
-import * as barrel from "../sdk/index.js";
+} from "./hooks.js";
+import * as barrel from "./index.js";
 
 function mountHook<T>(useHook: () => T): {
   result: { current: T };

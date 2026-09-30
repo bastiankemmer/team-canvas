@@ -1,11 +1,13 @@
 import ts from "typescript";
 
+export type OrientSlot = { id: string; label: string };
+
 export type OrientationInfo = {
   kind: string | null;
   addAvailable: boolean;
+  /** Blank slots still in the source, in document order. */
+  slots: OrientSlot[];
 };
-
-export type OrientSlot = { id: string };
 
 export type AddOrientedTransform = {
   source: string;
@@ -163,8 +165,68 @@ function newSlotId(): string {
 
 export function inspectSourceOrientation(source: string): OrientationInfo {
   const { pattern } = parse(source);
-  if (!pattern) return { kind: null, addAvailable: false };
-  return { kind: pattern.kind, addAvailable: true };
+  const slots = pendingSlots(source);
+  if (!pattern) return { kind: null, addAvailable: false, slots };
+  return { kind: pattern.kind, addAvailable: true, slots };
+}
+
+const SLOT_TOKEN = /__tc_slot_([A-Za-z0-9]+)__/g;
+
+/** "CardHeader" -> "Card header"; Button text is its label; no wrapper -> "Text". */
+function slotLabel(tag: string | null): string {
+  if (!tag) return "Text";
+  if (tag === "Button") return "Button label";
+  const words = tag
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Blank slots left in the source, in document order, labelled by the element
+ * that wraps them. Repeated labels are numbered ("Text 1", "Text 2").
+ */
+export function pendingSlots(source: string): OrientSlot[] {
+  const sf = ts.createSourceFile(
+    "canvas.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TSX,
+  );
+  const found: { id: string; label: string }[] = [];
+  const seen = new Set<string>();
+  const collect = (text: string, tag: string | null) => {
+    for (const m of text.matchAll(SLOT_TOKEN)) {
+      if (seen.has(m[1]!)) continue;
+      seen.add(m[1]!);
+      found.push({ id: m[1]!, label: slotLabel(tag) });
+    }
+  };
+
+  function visit(node: ts.Node, tag: string | null) {
+    if (ts.isJsxText(node)) {
+      collect(node.getText(sf), tag);
+      return;
+    }
+    if (ts.isJsxExpression(node) && node.expression && ts.isStringLiteral(node.expression)) {
+      collect(node.expression.getText(sf), tag);
+      return;
+    }
+    const next = ts.isJsxElement(node) ? tagName(node) : tag;
+    ts.forEachChild(node, (c) => visit(c, next));
+  }
+  visit(sf, null);
+
+  const total: Record<string, number> = {};
+  for (const f of found) total[f.label] = (total[f.label] ?? 0) + 1;
+  const index: Record<string, number> = {};
+  return found.map((f) => {
+    if (total[f.label]! < 2) return f;
+    index[f.label] = (index[f.label] ?? 0) + 1;
+    return { id: f.id, label: `${f.label} ${index[f.label]}` };
+  });
 }
 
 /**
@@ -186,10 +248,10 @@ export function addOrientedSibling(source: string): AddOrientedTransform {
     .map((r) => ({ start: r.start - tStart, end: r.end - tStart }))
     .sort((a, b) => b.start - a.start);
 
-  const slots: OrientSlot[] = [];
+  const ids = new Set<string>();
   for (const r of ranges) {
     const id = newSlotId();
-    slots.push({ id });
+    ids.add(id);
     clone = clone.slice(0, r.start) + `__tc_slot_${id}__` + clone.slice(r.end);
   }
 
@@ -204,16 +266,15 @@ export function addOrientedSibling(source: string): AddOrientedTransform {
     indentEnd++;
   }
   const indent = source.slice(lineStart, indentEnd);
-  return {
-    source: source.slice(0, tEnd) + `\n${indent}${clone}` + source.slice(tEnd),
-    slots,
-  };
+  const next = source.slice(0, tEnd) + `\n${indent}${clone}` + source.slice(tEnd);
+  // Read the slots back from the finished source: document order, with labels.
+  return { source: next, slots: pendingSlots(next).filter((s) => ids.has(s.id)) };
 }
 
 /** Ids still present as `__tc_slot_<id>__` tokens — source of truth across restarts. */
 export function slotIdsFromSource(source: string): Set<string> {
   const ids = new Set<string>();
-  for (const m of source.matchAll(/__tc_slot_([A-Za-z0-9]+)__/g)) {
+  for (const m of source.matchAll(SLOT_TOKEN)) {
     ids.add(m[1]!);
   }
   return ids;

@@ -1,6 +1,6 @@
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { CanvasStore } from "../ports/canvas-store.js";
+import type { CanvasStore } from "../../ports/canvas-store.js";
 
 const CANVAS_SUFFIX = ".canvas.tsx";
 const STATE_SUFFIX = ".canvas.data.json";

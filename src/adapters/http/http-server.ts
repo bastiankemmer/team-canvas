@@ -1,21 +1,21 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Auth } from '../ports/auth.js'
-import type { CanvasStore } from '../ports/canvas-store.js'
-import { bundleCanvas } from '../app/bundle-canvas.js'
-import { createCanvasEditOps } from '../app/canvas-edit-ops.js'
-import { createAuthAdapter } from './create-auth.js'
+import type { Auth } from '../../ports/auth.js'
+import type { CanvasStore } from '../../ports/canvas-store.js'
+import { bundleCanvas } from '../../app/build/bundle-canvas.js'
+import { createCanvasEditOps, type SlotsResult } from '../../app/edit/canvas-edit-ops.js'
+import { createAuthAdapter } from '../auth/create-auth.js'
 import {
   assertSafeCanvasId,
   LocalFilesystemCanvasStore,
-} from './local-fs-canvas-store.js'
+} from '../store/local-fs-canvas-store.js'
 import {
   editShellHtml,
   indexShellHtml,
   notFoundShellHtml,
   viewerShellHtml,
-} from '../host-ui/shell.js'
+} from './shell.js'
 
 export const DEFAULT_HOST = '0.0.0.0'
 export const DEFAULT_PORT = 3847
@@ -547,14 +547,17 @@ export async function startHttpServer(
               }
               slots[k] = v
             }
+            let filled: SlotsResult
             try {
-              await withOwnSourceWrite(id, () => ops.fillSlots(id, slots))
+              filled = await withOwnSourceWrite(id, () => ops.fillSlots(id, slots))
             } catch (err) {
               replyOpsError(err, 'Failed to fill slots')
               return
             }
-            res.writeHead(204)
-            res.end()
+            res.writeHead(200, {
+              'content-type': 'application/json; charset=utf-8',
+            })
+            res.end(JSON.stringify(filled))
             return
           }
 

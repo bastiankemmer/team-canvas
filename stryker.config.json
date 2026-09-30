@@ -3,9 +3,9 @@
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
   "mutate": [
-    "src/app/canvas-edit-ops.ts",
-    "src/app/canvas-orientation.ts",
-    "src/adapters/mcp-server.ts"
+    "src/app/edit/canvas-edit-ops.ts",
+    "src/app/edit/canvas-orientation.ts",
+    "src/adapters/mcp/mcp-server.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

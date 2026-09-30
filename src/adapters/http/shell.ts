@@ -3,7 +3,7 @@
 import {
   canvasPaletteDark,
   canvasPaletteLight,
-} from "../sdk/canvas-tokens.js";
+} from "../../sdk/canvas-tokens.js";
 
 const chrome = String.raw`
 :root {
@@ -586,6 +586,7 @@ const editScript = String.raw`
   var tablist = document.querySelector("[data-edit-view-switch]");
   var tabs = tablist ? tablist.querySelectorAll("[data-edit-view]") : [];
   var slotIds = [];
+  var orientInfo = null;
   var addAvailable = false;
   var orientLoading = false;
   var savedText = "";
@@ -646,49 +647,6 @@ const editScript = String.raw`
     return true;
   }
 
-  function wrapperTagForSlot(text, sid) {
-    var token = "__tc_slot_" + sid + "__";
-    var i = (text || "").indexOf(token);
-    if (i < 0) return null;
-    var j = i - 1;
-    while (j >= 0 && /\s/.test(text.charAt(j))) j--;
-    if (j < 0 || text.charAt(j) !== ">") return null;
-    var k = j;
-    while (k >= 0 && text.charAt(k) !== "<") k--;
-    if (k < 0) return null;
-    var inner = text.slice(k + 1, j);
-    if (!inner || inner.charAt(0) === "/" || inner.charAt(0) === "!") return null;
-    var m = /^([A-Za-z][A-Za-z0-9]*)/.exec(inner);
-    return m ? m[1] : null;
-  }
-
-  function humanSlotLabel(tag, sid) {
-    if (!tag) return sid;
-    if (tag === "Button") return "Button label";
-    var spaced = tag.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
-    var parts = spaced.split(" ");
-    return parts.map(function (p, idx) {
-      var lower = p.toLowerCase();
-      if (idx === 0) return lower.charAt(0).toUpperCase() + lower.slice(1);
-      return lower;
-    }).join(" ");
-  }
-
-  /** Rehydrate Fill chrome from leftover tokens after SSE full-page reload. */
-  function slotsFromSource(text) {
-    var out = [];
-    var seen = {};
-    var re = /__tc_slot_([A-Za-z0-9]+)__/g;
-    var m;
-    while ((m = re.exec(text || ""))) {
-      if (!seen[m[1]]) {
-        seen[m[1]] = true;
-        out.push({ id: m[1] });
-      }
-    }
-    return out;
-  }
-
   function renderSlots(slots, opts) {
     opts = opts || {};
     slotIds = (slots || []).map(function (s) { return s.id; });
@@ -699,12 +657,12 @@ const editScript = String.raw`
       if (fillBtn) fillBtn.disabled = true;
       return;
     }
-    var src = sourceEl ? sourceEl.value : "";
-    slotsEl.innerHTML = slotIds.map(function (sid) {
+    slotsEl.innerHTML = slots.map(function (slot) {
+      var sid = slot.id;
       var safe = String(sid).replace(/"/g, "&quot;");
-      var label = humanSlotLabel(wrapperTagForSlot(src, sid), sid);
+      var label = slot.label || sid;
       var labelSafe = String(label).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-      var ph = label === sid ? "Replacement text" : ("Text for " + label.toLowerCase());
+      var ph = label === sid ? "Replacement text" : ("Enter " + label.toLowerCase());
       var phSafe = String(ph).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
       return '<div class="edit-slot"><label for="slot-' + safe + '">' + labelSafe +
         '<span class="edit-slot-id" title="' + safe + '">' + safe + '</span></label>' +
@@ -731,10 +689,12 @@ const editScript = String.raw`
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fills),
     }).then(function (res) {
-      if (res.status === 204 || res.ok) {
-        setStatus("Filled.");
-        renderSlots([]);
-        return loadSource();
+      if (res.ok) {
+        return res.json().then(function (data) {
+          setStatus(data && data.slots && data.slots.length ? "Filled. Some slots are still blank." : "Filled.");
+          renderSlots(data && data.slots ? data.slots : []);
+          return loadSource();
+        });
       }
       return res.text().then(function (t) {
         setStatus(t || ("Fill failed (" + res.status + ")."), "error");
@@ -774,6 +734,7 @@ const editScript = String.raw`
       }
       return res.json();
     }).then(function (info) {
+      orientInfo = info;
       addAvailable = !!(info && info.addAvailable);
       var kind = info && info.kind ? String(info.kind) : null;
       if (orientMeta) {
@@ -931,7 +892,7 @@ const editScript = String.raw`
 
   setStatus("Loading…");
   Promise.all([loadSource(), loadOrientation()]).then(function () {
-    var leftover = slotsFromSource(sourceEl ? sourceEl.value : "");
+    var leftover = orientInfo && orientInfo.slots ? orientInfo.slots : [];
     renderSlots(leftover);
     var previewErr = document.querySelector('[data-shell="edit-preview"][data-tone="error"]');
     if (previewErr && previewErr.textContent) {

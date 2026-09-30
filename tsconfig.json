@@ -15,26 +15,10 @@
     ]
   },
   "include": [
-    "src/cli.ts",
-    "src/adapters/http-server.ts",
-    "src/adapters/mcp-server.ts",
-    "src/adapters/create-auth.ts",
-    "src/adapters/disabled-auth.ts",
-    "src/adapters/local-fs-canvas-store.ts",
-    "src/ports/auth.ts",
-    "src/ports/canvas-store.ts",
-    "src/host-ui/shell.ts",
-    "src/app/bundle-canvas.ts",
-    "src/app/canvas-edit-ops.ts",
-    "src/app/canvas-orientation.ts",
-    "src/app/canvas-state-bridge.ts",
-    "src/sdk/**/*.ts",
-    "src/sdk/**/*.tsx"
+    "src"
   ],
   "exclude": [
     "src/**/*.test.ts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.ts",
-    "src/**/*.spec.tsx"
+    "src/**/*.test.tsx"
   ]
 }

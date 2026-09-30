@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { createCanvasEditOps } from "../app/canvas-edit-ops.js";
-import { callMcpTool } from "./mcp-server.js";
+import { createCanvasEditOps } from "../../src/app/edit/canvas-edit-ops.js";
+import { callMcpTool } from "../../src/adapters/mcp/mcp-server.js";
 import {
   startHttpServer,
   type RunningServer,
-} from "./http-server.js";
-import { LocalFilesystemCanvasStore } from "./local-fs-canvas-store.js";
+} from "../../src/adapters/http/http-server.js";
+import { LocalFilesystemCanvasStore } from "../../src/adapters/store/local-fs-canvas-store.js";
 
 const examplesRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -76,8 +76,12 @@ describe("edit acceptance", () => {
     );
     expect(editAfterAdd.status).toBe(200);
     const editHtml = await editAfterAdd.text();
-    expect(editHtml).toContain("slotsFromSource");
-    expect(editHtml).toContain("__tc_slot_([A-Za-z0-9]+)");
+    expect(editHtml).toContain("orientInfo.slots");
+    // Leftover slots are served with labels, in document order.
+    const orientBody = (await (
+      await fetch(`${server.url}/api/canvas/${encodeURIComponent(FIXTURE_ID)}/orientation`)
+    ).json()) as { slots: { id: string; label: string }[] };
+    expect(orientBody.slots).toEqual(slots);
 
     // Fresh ops (empty process memory) can fill without re-add — source tokens are known.
     const restarted = createCanvasEditOps(LocalFilesystemCanvasStore(root));

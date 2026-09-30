@@ -2,8 +2,8 @@ import type { Readable, Writable } from "node:stream";
 import {
   createCanvasEditOps,
   type CanvasEditOps,
-} from "../app/canvas-edit-ops.js";
-import { LocalFilesystemCanvasStore } from "./local-fs-canvas-store.js";
+} from "../../app/edit/canvas-edit-ops.js";
+import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
 
 /** ponytail: hand-roll tools-only JSON-RPC+stdio; upgrade to an MCP SDK only if framing needs grow. */
 
@@ -60,7 +60,8 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   },
   {
     name: "inspect_orientation",
-    description: "Describe repeating sibling pattern and whether Add is available",
+    description:
+      "Describe the repeating sibling pattern, whether Add is available, and the blank slots still in the file (id, label)",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" } },
@@ -69,7 +70,8 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   },
   {
     name: "add_oriented",
-    description: "Clone oriented sibling with blank fill slots",
+    description:
+      "Clone the repeating sibling with blank slots; returns the new slots (id, label) in document order",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" } },
@@ -78,7 +80,8 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   },
   {
     name: "fill_slots",
-    description: "Fill blank slots from a prior add_oriented with user values",
+    description:
+      "Fill blank slots by id (see add_oriented or inspect_orientation); returns the slots still blank",
     inputSchema: {
       type: "object",
       properties: {
@@ -146,13 +149,11 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     ops.inspectOrientation(requireString(args, "id")),
   add_oriented: async (ops, args) => {
     const id = requireString(args, "id");
-    const { slots } = await ops.addOriented(id);
-    return { ok: true, id, slots };
+    return ops.addOriented(id);
   },
   fill_slots: async (ops, args) => {
     const id = requireString(args, "id");
-    await ops.fillSlots(id, requireSlotRecord(args));
-    return { ok: true, id };
+    return ops.fillSlots(id, requireSlotRecord(args));
   },
 };
 

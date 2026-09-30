@@ -36,8 +36,8 @@ import {
   TodoListCard,
   Toggle,
   UsageBar,
-} from "../sdk/index.js";
-import * as barrel from "../sdk/index.js";
+} from "./index.js";
+import * as barrel from "./index.js";
 
 function render(node: ReactNode): { container: HTMLElement; unmount: () => void } {
   const container = document.createElement("div");
