@@ -86,6 +86,7 @@ export type {
   ButtonProps,
   CalloutProps,
   CalloutTone,
+  CanvasLinkProps,
   CardBodyProps,
   CardHeaderProps,
   CardProps,
@@ -114,6 +115,7 @@ export type {
 export {
   Button,
   Callout,
+  CanvasLink,
   Card,
   CardBody,
   CardHeader,

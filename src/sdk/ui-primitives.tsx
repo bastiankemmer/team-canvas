@@ -458,6 +458,32 @@ export function Link({ children, href, style }: LinkProps): JSX.Element {
   );
 }
 
+export type CanvasLinkProps = {
+  to: string;
+  children?: ReactNode;
+  style?: CSSProperties;
+};
+
+export function CanvasLink({
+  to,
+  children,
+  style,
+}: CanvasLinkProps): JSX.Element {
+  const theme = useHostTheme();
+  return (
+    <a
+      href={"/canvas/" + encodeURIComponent(to)}
+      style={{
+        color: theme.text.link,
+        textDecoration: "underline",
+        ...style,
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 export type CardSize = "base" | "lg";
 export type CardVariant = "default" | "borderless";
 
