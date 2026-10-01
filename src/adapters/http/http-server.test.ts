@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import http from 'node:http'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -17,6 +18,7 @@ import {
 } from './http-server.js'
 import { LocalFilesystemCanvasStore } from '../store/local-fs-canvas-store.js'
 import { parseServeArgs } from '../../cli.js'
+import { createCanvasEditOps } from '../../app/edit/canvas-edit-ops.js'
 
 describe('team-canvas serve', () => {
   const servers: RunningServer[] = []
@@ -735,6 +737,259 @@ export default function Solo() {
     expect(
       (await fetch(`${server.url}/api/canvas/doc/replace`)).status,
     ).not.toBe(200)
+  })
+
+  it('@task-2: GET /api/canvas/:id/links returns the ops array as application/json; missing is 404, bad id is 400, non-GET is 405, no links is []', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-http-links-'))
+    const notes = [
+      'export default function Notes() {',
+      '  return (',
+      '    <CanvasLink to="billing">Billing</CanvasLink>',
+      '  );',
+      '}',
+      '',
+    ].join('\n')
+    await writeFile(path.join(root, 'notes.canvas.tsx'), notes, 'utf8')
+    await writeFile(
+      path.join(root, 'billing.canvas.tsx'),
+      'export default function Billing() { return null }\n',
+      'utf8',
+    )
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root))
+    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    servers.push(server)
+
+    const listed = await ops.listLinks('notes')
+    expect(listed).toEqual([
+      { to: 'billing', line: 3, label: 'Billing', exists: true },
+    ])
+    const got = await fetch(`${server.url}/api/canvas/notes/links`)
+    expect(got.status).toBe(200)
+    expect(got.headers.get('content-type')).toMatch(/application\/json/)
+    expect(await got.json()).toEqual(listed)
+
+    const posted = await fetch(`${server.url}/api/canvas/notes/links`, {
+      method: 'POST',
+    })
+    expect(posted.status).toBe(405)
+
+    const missing = await fetch(`${server.url}/api/canvas/absent/links`)
+    expect(missing.status).toBe(404)
+    expect(await missing.text()).toBe('Not found')
+
+    // fetch resolves %2E%2E before the request, so ".." is sent as a raw path.
+    const dotdot = await new Promise<{ status: number; body: string }>(
+      (resolve, reject) => {
+        const u = new URL(server.url)
+        const req = http.request(
+          {
+            hostname: u.hostname,
+            port: u.port,
+            path: '/api/canvas/%2E%2E/links',
+            method: 'GET',
+          },
+          (res) => {
+            const chunks: Buffer[] = []
+            res.on('data', (c: Buffer) => chunks.push(c))
+            res.on('end', () =>
+              resolve({
+                status: res.statusCode ?? 0,
+                body: Buffer.concat(chunks).toString('utf8'),
+              }),
+            )
+          },
+        )
+        req.on('error', reject)
+        req.end()
+      },
+    )
+    expect(dotdot.status).toBe(400)
+    expect(dotdot.body).toMatch(/Invalid canvas id/)
+
+    for (const id of ['a%2Fb', 'a%5Cb']) {
+      const bad = await fetch(`${server.url}/api/canvas/${id}/links`)
+      expect(bad.status, id).toBe(400)
+      expect(await bad.text()).toMatch(/Invalid canvas id/)
+    }
+
+    await writeFile(
+      path.join(root, 'notes.canvas.tsx'),
+      'export default function Notes() { return <div>no links</div> }\n',
+      'utf8',
+    )
+    const empty = await fetch(`${server.url}/api/canvas/notes/links`)
+    expect(empty.status).toBe(200)
+    expect(await empty.json()).toEqual([])
+  })
+
+  it('@task-3: GET /api/canvas/:id/backlinks returns the ops array as application/json; missing is 404, bad id is 400, non-GET is 405, no links is []', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-http-backlinks-'))
+    const a = [
+      'export default function A() {',
+      '  return (',
+      '    <div>',
+      '      <CanvasLink to="b">First</CanvasLink>',
+      '      <CanvasLink to="b">Second</CanvasLink>',
+      '    </div>',
+      '  );',
+      '}',
+      '',
+    ].join('\n')
+    const c = [
+      'export default function C() {',
+      '  return <CanvasLink to="b">From C</CanvasLink>;',
+      '}',
+      '',
+    ].join('\n')
+    await writeFile(path.join(root, 'a.canvas.tsx'), a, 'utf8')
+    await writeFile(
+      path.join(root, 'b.canvas.tsx'),
+      'export default function B() { return null }\n',
+      'utf8',
+    )
+    await writeFile(path.join(root, 'c.canvas.tsx'), c, 'utf8')
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root))
+    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    servers.push(server)
+
+    const listed = await ops.backlinks('b')
+    expect(listed.map((row) => row.from).sort()).toEqual(['a', 'a', 'c'])
+    const got = await fetch(`${server.url}/api/canvas/b/backlinks`)
+    expect(got.status).toBe(200)
+    expect(got.headers.get('content-type')).toMatch(/application\/json/)
+    expect(await got.json()).toEqual(listed)
+
+    const posted = await fetch(`${server.url}/api/canvas/b/backlinks`, {
+      method: 'POST',
+    })
+    expect(posted.status).toBe(405)
+
+    const missing = await fetch(`${server.url}/api/canvas/absent/backlinks`)
+    expect(missing.status).toBe(404)
+    expect(await missing.text()).toBe('Not found')
+
+    const dotdot = await new Promise<{ status: number; body: string }>(
+      (resolve, reject) => {
+        const u = new URL(server.url)
+        const req = http.request(
+          {
+            hostname: u.hostname,
+            port: u.port,
+            path: '/api/canvas/%2E%2E/backlinks',
+            method: 'GET',
+          },
+          (res) => {
+            const chunks: Buffer[] = []
+            res.on('data', (c: Buffer) => chunks.push(c))
+            res.on('end', () =>
+              resolve({
+                status: res.statusCode ?? 0,
+                body: Buffer.concat(chunks).toString('utf8'),
+              }),
+            )
+          },
+        )
+        req.on('error', reject)
+        req.end()
+      },
+    )
+    expect(dotdot.status).toBe(400)
+    expect(dotdot.body).toMatch(/Invalid canvas id/)
+
+    for (const id of ['a%2Fb', 'a%5Cb']) {
+      const bad = await fetch(`${server.url}/api/canvas/${id}/backlinks`)
+      expect(bad.status, id).toBe(400)
+      expect(await bad.text()).toMatch(/Invalid canvas id/)
+    }
+
+    const blank = 'export default function X() { return null }\n'
+    for (const id of ['a', 'b', 'c']) {
+      await writeFile(path.join(root, `${id}.canvas.tsx`), blank, 'utf8')
+    }
+    const emptyOps = await ops.backlinks('b')
+    expect(emptyOps).toEqual([])
+    const empty = await fetch(`${server.url}/api/canvas/b/backlinks`)
+    expect(empty.status).toBe(200)
+    expect(await empty.json()).toEqual(emptyOps)
+  })
+
+  it('@task-4: GET /api/canvas/a/search-linked?q=needle returns the ops array as application/json; empty q is 400, missing is 404, non-GET is 405, and no hits is []', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-http-search-linked-'))
+    const a = [
+      'export default function A() {',
+      '  return (',
+      '    <div>',
+      '      needle on a',
+      '      <CanvasLink to="b">B</CanvasLink>',
+      '      <CanvasLink to="ghost">Gone</CanvasLink>',
+      '      <CanvasLink to="b">Again</CanvasLink>',
+      '      <CanvasLink to="e">E</CanvasLink>',
+      '    </div>',
+      '  );',
+      '}',
+      '',
+    ].join('\n')
+    await writeFile(path.join(root, 'a.canvas.tsx'), a, 'utf8')
+    await writeFile(
+      path.join(root, 'b.canvas.tsx'),
+      'const code = "needle";\nexport default function B() {\n  return <span className="needle">x</span>;\n}\n',
+      'utf8',
+    )
+    await writeFile(
+      path.join(root, 'c.canvas.tsx'),
+      'export default function C() {\n  return <CanvasLink to="a">needle</CanvasLink>;\n}\n',
+      'utf8',
+    )
+    await writeFile(
+      path.join(root, 'd.canvas.tsx'),
+      'export default function D() {\n  return <div>needle</div>;\n}\n',
+      'utf8',
+    )
+    await writeFile(
+      path.join(root, 'e.canvas.tsx'),
+      'export default function E() {\n  return <code>needle</code>;\n}\n',
+      'utf8',
+    )
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root))
+    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    servers.push(server)
+
+    const hits = await ops.searchLinked('a', 'needle')
+    expect(hits.map((hit) => hit.id)).toEqual(['b', 'b', 'e'])
+    const got = await fetch(`${server.url}/api/canvas/a/search-linked?q=needle`)
+    expect(got.status).toBe(200)
+    expect(got.headers.get('content-type')).toMatch(/application\/json/)
+    expect(await got.json()).toEqual(hits)
+
+    const posted = await fetch(`${server.url}/api/canvas/a/search-linked?q=needle`, {
+      method: 'POST',
+    })
+    expect(posted.status).toBe(405)
+
+    const emptyQ = await fetch(`${server.url}/api/canvas/a/search-linked?q=`)
+    expect(emptyQ.status).toBe(400)
+    expect(await emptyQ.text()).toBe('Search query must be non-empty')
+
+    const noneOps = await ops.searchLinked('a', 'zzzz-no-match')
+    expect(noneOps).toEqual([])
+    const none = await fetch(`${server.url}/api/canvas/a/search-linked?q=zzzz-no-match`)
+    expect(none.status).toBe(200)
+    expect(await none.json()).toEqual(noneOps)
+
+    await writeFile(
+      path.join(root, 'a.canvas.tsx'),
+      'export default function A() { return <div>needle</div> }\n',
+      'utf8',
+    )
+    const emptyOps = await ops.searchLinked('a', 'needle')
+    expect(emptyOps).toEqual([])
+    const empty = await fetch(`${server.url}/api/canvas/a/search-linked?q=needle`)
+    expect(empty.status).toBe(200)
+    expect(await empty.json()).toEqual(emptyOps)
+
+    const missing = await fetch(`${server.url}/api/canvas/absent/search-linked?q=needle`)
+    expect(missing.status).toBe(404)
+    expect(await missing.text()).toBe('Not found')
   })
 })
 

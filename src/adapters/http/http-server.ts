@@ -446,7 +446,7 @@ export async function startHttpServer(
 
         // Shared edit ops (thin JSON/text over createCanvasEditOps).
         const editMatch =
-          /^\/api\/canvas\/([^/]+)\/(source|check|replace|search|orientation|add-oriented|fill-slots)\/?$/.exec(
+          /^\/api\/canvas\/([^/]+)\/(source|check|replace|search|search-linked|orientation|add-oriented|fill-slots|links|backlinks)\/?$/.exec(
             pathName,
           )
         if (editMatch) {
@@ -522,6 +522,46 @@ export async function startHttpServer(
               res.end(JSON.stringify(hits))
             } catch (err) {
               replyOpsError(err, 'Failed to search canvas source')
+            }
+            return
+          }
+
+          if (action === 'links' && method === 'GET') {
+            try {
+              const links = await ops.listLinks(id)
+              res.writeHead(200, {
+                'content-type': 'application/json; charset=utf-8',
+              })
+              res.end(JSON.stringify(links))
+            } catch (err) {
+              replyOpsError(err, 'Failed to list canvas links')
+            }
+            return
+          }
+
+          if (action === 'backlinks' && method === 'GET') {
+            try {
+              const incoming = await ops.backlinks(id)
+              res.writeHead(200, {
+                'content-type': 'application/json; charset=utf-8',
+              })
+              res.end(JSON.stringify(incoming))
+            } catch (err) {
+              replyOpsError(err, 'Failed to list canvas backlinks')
+            }
+            return
+          }
+
+          if (action === 'search-linked' && method === 'GET') {
+            const q = queryParam(req.url ?? '', 'q')
+            try {
+              const hits = await ops.searchLinked(id, q)
+              res.writeHead(200, {
+                'content-type': 'application/json; charset=utf-8',
+              })
+              res.end(JSON.stringify(hits))
+            } catch (err) {
+              replyOpsError(err, 'Failed to search linked canvases')
             }
             return
           }

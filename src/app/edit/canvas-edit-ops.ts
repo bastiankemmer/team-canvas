@@ -9,9 +9,27 @@ import {
   type OrientationInfo,
 } from "./canvas-orientation.js";
 import { bundleCanvas } from "../build/bundle-canvas.js";
+import { extractCanvasLinks } from "./canvas-links.js";
 import { assertNewCanvasId, starterSource } from "./new-canvas.js";
 
 export type SearchHit = { line: number; snippet: string };
+
+/** One outgoing CanvasLink, in source order. */
+export type CanvasLinkRef = {
+  to: string;
+  line: number;
+  label: string | null;
+  exists: boolean;
+};
+
+/** One incoming CanvasLink. `from` is the canvas that contains the tag. */
+export type CanvasBacklink = {
+  from: string;
+  line: number;
+  label: string | null;
+};
+
+export type LinkedSearchHit = { id: string; line: number; snippet: string };
 
 export type { OrientationInfo, OrientSlot };
 
@@ -45,10 +63,25 @@ export type CanvasEditOps = {
   /** Bundle the canvas and report errors (`line:col message`) instead of throwing. */
   checkCanvas(id: string): Promise<CheckResult>;
   searchSource(id: string, query: string): Promise<SearchHit[]>;
+  /** Outgoing CanvasLink tags in this canvas, source order. */
+  listLinks(id: string): Promise<CanvasLinkRef[]>;
+  /** Canvases that link to `id`, in store.list() order then source order. */
+  backlinks(id: string): Promise<CanvasBacklink[]>;
+  /** Substring search of direct outgoing canvases, one hop. */
+  searchLinked(id: string, query: string): Promise<LinkedSearchHit[]>;
   inspectOrientation(id: string): Promise<OrientationInfo>;
   addOriented(id: string): Promise<SlotsResult>;
   fillSlots(id: string, slots: Record<string, string>): Promise<SlotsResult>;
 };
+
+function isEnoent(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "ENOENT"
+  );
+}
 
 /** Shared read/write/search/orient over CanvasStore — HTTP and MCP call only this. */
 export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
@@ -100,6 +133,54 @@ export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
         if (lines[i]!.includes(query)) {
           hits.push({ line: i + 1, snippet: lines[i]! });
         }
+      }
+      return hits;
+    },
+    async listLinks(id) {
+      const source = await store.readSource(id);
+      const ids = new Set(await store.list());
+      return extractCanvasLinks(source).map((link) => ({
+        ...link,
+        exists: ids.has(link.to),
+      }));
+    },
+    async backlinks(id) {
+      await store.readSource(id);
+      const ids = await store.list();
+      const hits: CanvasBacklink[] = [];
+      // ponytail: one full read of every canvas per call. Ceiling is store size.
+      // Upgrade path: an index written beside the store, only if this scan shows up in real use.
+      for (const from of ids) {
+        let source: string;
+        try {
+          source = await store.readSource(from);
+        } catch (err) {
+          if (isEnoent(err)) continue;
+          throw err;
+        }
+        for (const link of extractCanvasLinks(source)) {
+          if (link.to === id) hits.push({ from, line: link.line, label: link.label });
+        }
+      }
+      return hits;
+    },
+    async searchLinked(id, query) {
+      if (!query) {
+        throw new Error("Search query must be non-empty");
+      }
+      const hits: LinkedSearchHit[] = [];
+      const seen = new Set<string>();
+      for (const link of await this.listLinks(id)) {
+        if (link.to === id || !link.exists || seen.has(link.to)) continue;
+        seen.add(link.to);
+        let found: SearchHit[];
+        try {
+          found = await this.searchSource(link.to, query);
+        } catch (err) {
+          if (isEnoent(err)) continue;
+          throw err;
+        }
+        for (const hit of found) hits.push({ id: link.to, ...hit });
       }
       return hits;
     },
