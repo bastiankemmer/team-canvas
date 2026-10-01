@@ -3,6 +3,7 @@
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
   "mutate": [
+    "src/app/edit/canvas-links.ts",
     "src/app/edit/canvas-edit-ops.ts",
     "src/app/edit/canvas-orientation.ts",
     "src/adapters/mcp/mcp-server.ts"

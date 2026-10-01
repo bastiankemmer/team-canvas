@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: [
+      "src/app/edit/canvas-links.test.ts",
       "src/app/edit/canvas-edit-ops.test.ts",
       "src/app/edit/canvas-orientation.test.ts",
       "src/adapters/mcp/mcp-server.test.ts",
