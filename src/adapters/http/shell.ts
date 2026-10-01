@@ -50,7 +50,6 @@ const chrome = String.raw`
   }
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; }
 body {
   margin: 0;
   font-family: var(--font);
@@ -63,6 +62,8 @@ body {
   flex-direction: column;
   -webkit-font-smoothing: antialiased;
 }
+/* Viewer and library grow with their content; only the editor is pinned to the viewport (its panes scroll). */
+body:has(> main.edit-main) { height: 100vh; }
 .top {
   flex: 0 0 auto;
   border-bottom: 1px solid var(--border);
@@ -73,10 +74,10 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem 1rem;
-  padding: 0.75rem var(--pad);
+  padding: 1rem var(--pad);
   width: 100%;
   margin-inline: auto;
-  min-height: 3.35rem;
+  min-height: 4rem;
 }
 body:has(> main:not(.viewer-main):not(.edit-main)) .top-inner {
   max-width: calc(var(--content-max) + 2 * var(--pad));
@@ -429,11 +430,11 @@ label.btn:focus-visible {
   flex-direction: column;
   align-items: stretch;
   border-top: none;
-  padding: 0 var(--pad) var(--pad);
+  padding: var(--pad);
 }
 .viewer-main #root,
 .edit-preview #root {
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   width: 100%;
   max-width: var(--stage-max);
   margin-inline: auto;
@@ -457,6 +458,7 @@ label.btn:focus-visible {
   min-height: 0;
   grid-area: preview;
   background: var(--bg);
+  overflow-y: auto;
 }
 .edit-chrome {
   grid-area: chrome;
