@@ -49,6 +49,7 @@ Planned:
 - Realtime collaboration on the same canvas.
 - Agent collaboration: an agent leases a write lock on a canvas before it may write and releases it when done, so other agents can read a consistent canvas. HTTP and MCP tools to acquire, release and inspect the lease, with a timeout so a crashed agent cannot hold a canvas forever.
 - Sessions: upload a canvas and invite collaborators, with MCP support for those sessions.
+- Open knowledge format: canvases instead of Markdown files as a knowledge base. Canvases link to each other, and agents can follow those links through MCP and HTTP to find information across linked canvases.
 - A connector for `useCanvasAction` (open agent, open file, new chat), which is a logged no-op today.
 
 ### HTTP API
