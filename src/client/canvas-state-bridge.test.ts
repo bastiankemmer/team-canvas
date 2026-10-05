@@ -121,6 +121,31 @@ describe("canvas-state-bridge edge paths", () => {
     expect(store.get("absent")).toBeUndefined();
   });
 
+  it('@task-7: it PUTs "/api/canvas/guides/editing-workflow/state"', async () => {
+    (globalThis as { __TEAM_CANVAS__?: TeamCanvasBoot }).__TEAM_CANVAS__ = {
+      canvasId: "guides/editing-workflow",
+      state: {},
+    };
+    const boot = readTeamCanvasBoot();
+    expect(boot?.canvasId).toBe("guides/editing-workflow");
+
+    let seenUrl = "";
+    let seenMethod = "";
+    const store = createHttpCanvasStateStore(boot!, {
+      fetch: async (url, init) => {
+        seenUrl = String(url);
+        seenMethod = init?.method ?? "";
+        return new Response(null, { status: 204 });
+      },
+    });
+    store.set("draft", true);
+    await vi.waitFor(() => {
+      expect(seenMethod).toBe("PUT");
+    });
+    expect(seenUrl).toBe("/api/canvas/guides/editing-workflow/state");
+    expect(seenUrl).not.toBe("/api/canvas/guides%2Fediting-workflow/state");
+  });
+
   it("mutation: state bag is a copy; PUT sends application/json content-type", async () => {
     const bootState: Record<string, unknown> = { n: 1 };
     ;(globalThis as { __TEAM_CANVAS__?: TeamCanvasBoot }).__TEAM_CANVAS__ = {
@@ -158,5 +183,79 @@ describe("canvas-state-bridge edge paths", () => {
       expect(seenContentType).toBe("application/json");
     });
     expect(seenBody).toBe(JSON.stringify({ k: 2 }));
+  });
+
+  it("mutation: a 200 PUT does not call onWriteError", async () => {
+    const errors: string[] = [];
+    let fetched = false;
+    const store = createHttpCanvasStateStore(
+      { canvasId: "c", state: {} },
+      {
+        fetch: async () => {
+          fetched = true;
+          return new Response("saved", { status: 200, statusText: "OK" });
+        },
+        onWriteError: (message) => errors.push(message),
+      },
+    );
+    store.set("draft", true);
+    await vi.waitFor(() => expect(fetched).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(errors).toEqual([]);
+  });
+
+  it("mutation: text() rejection reports statusText", async () => {
+    const msg = await new Promise<string>((resolve) => {
+      const store = createHttpCanvasStateStore(
+        { canvasId: "c", state: {} },
+        {
+          fetch: async () => {
+            const res = new Response("ignored", {
+              status: 502,
+              statusText: "Bad Gateway",
+            });
+            res.text = () => Promise.reject(new Error("no body"));
+            return res;
+          },
+          onWriteError: (message) => resolve(message),
+        },
+      );
+      store.set("k", 1);
+    });
+    expect(msg).toBe("Bad Gateway");
+  });
+
+  it("mutation: a failed PUT without onWriteError does not throw", async () => {
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => {
+      rejections.push(reason);
+    };
+    process.on("unhandledRejection", onRejection);
+    try {
+      const httpFail = createHttpCanvasStateStore(
+        { canvasId: "c", state: {} },
+        {
+          fetch: async () => new Response("nope", { status: 500, statusText: "Nope" }),
+        },
+      );
+      httpFail.set("k", 1);
+
+      const thrown = createHttpCanvasStateStore(
+        { canvasId: "d", state: {} },
+        {
+          fetch: async () => {
+            throw new Error("network down");
+          },
+        },
+      );
+      thrown.set("k", 2);
+
+      for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(rejections).toEqual([]);
+      expect(httpFail.get("k")).toBe(1);
+      expect(thrown.get("k")).toBe(2);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+    }
   });
 });
