@@ -4,10 +4,17 @@ export default defineConfig({
   test: {
     environment: "node",
     include: [
+      "src/app/edit/canvas-links.test.ts",
       "src/app/edit/canvas-edit-ops.test.ts",
       "src/app/edit/canvas-orientation.test.ts",
       "src/adapters/mcp/mcp-server.test.ts",
       "test/acceptance/edit-acceptance.test.ts",
+      "src/adapters/store/local-fs-canvas-store.test.ts",
+      "src/adapters/http/http-server.test.ts",
+      "src/adapters/http/shell.test.ts",
+      "src/sdk/ui-primitives.test.tsx",
+      "src/client/canvas-state-bridge.test.ts",
+      "test/acceptance/host-ui-bundle.test.ts",
     ],
     pool: "forks",
     maxWorkers: 1,

@@ -22,7 +22,8 @@ export type McpToolDef = {
 export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "list_canvases",
-    description: "List canvas ids in the store root",
+    description:
+      'List canvas ids in the store root. Ids are relative to the store root and may contain "/".',
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -88,6 +89,39 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "search_source",
     description: "Search one canvas source; returns line + snippet matches",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        query: { type: "string" },
+      },
+      required: ["id", "query"],
+    },
+  },
+  {
+    name: "list_links",
+    description:
+      "Lists outgoing canvas ids. Use read_source to read one and search_source to search the canvas itself",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "backlinks",
+    description:
+      "Lists who links here. Use read_source to read one and search_source to search the canvas itself",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "search_linked",
+    description:
+      "Substring search of those direct targets. Use read_source to read one and search_source to search the canvas itself",
     inputSchema: {
       type: "object",
       properties: {
@@ -197,6 +231,10 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   check_canvas: (ops, args) => ops.checkCanvas(requireString(args, "id")),
   search_source: (ops, args) =>
     ops.searchSource(requireString(args, "id"), requireString(args, "query")),
+  list_links: (ops, args) => ops.listLinks(requireString(args, "id")),
+  backlinks: (ops, args) => ops.backlinks(requireString(args, "id")),
+  search_linked: (ops, args) =>
+    ops.searchLinked(requireString(args, "id"), requireString(args, "query")),
   inspect_orientation: (ops, args) =>
     ops.inspectOrientation(requireString(args, "id")),
   add_oriented: async (ops, args) => {

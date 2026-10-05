@@ -18,7 +18,7 @@ No global install? `npx team-canvas serve ./canvases` does the same. To import `
 
 ## 2. Create a canvas
 
-Open the server URL, type a name in **New canvas** and press **New**. team-canvas writes a starter file into your folder and opens it in the editor, ready to change. Names use letters, digits, `-` and `_`, and an existing name is never overwritten.
+Open the server URL, type a name in **New canvas** and press **New**. team-canvas writes a starter file into your folder and opens it in the editor, ready to change. A canvas id may contain `/`. Each segment uses letters, digits, `-` and `_`, and an existing name is never overwritten.
 
 Or write the file yourself. Create `canvases/hello.canvas.tsx`:
 
@@ -41,9 +41,11 @@ A canvas has one default-exported component and imports everything it needs from
 
 ## 3. The library
 
-Open the server URL. The library lists every canvas in the folder. Besides **New**, you can **upload** a `.canvas.tsx` with the button or by dropping it on the page. Each canvas has **Open**, **Edit** and **Copy link**.
+Open the server URL. The library is a tree. Besides **New**, upload is one file in the store root, with the button or by dropping a `.canvas.tsx` on the page. Each canvas has **Open**, **Edit** and **Copy link**. The library toggle is Folders (filesystem) and Knowledge (canvases reached from each id whose last segment is `index`, with everything else under Unlinked).
 
 ![Library page with the New canvas form, upload, and three canvases with Open, Edit and Copy link](images/library.png)
+
+The example is served with `team-canvas serve examples/okf`. Those ids start at `team-canvas/index`, `guides/editing-workflow`, and `reference/mcp-tools`. An OKF root is `<project-name>/index`.
 
 ## 4. The viewer
 
@@ -88,7 +90,7 @@ The same edit operations are available to agents over MCP (stdio):
 }
 ```
 
-Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. `create_canvas` takes an `id` and an optional `source`; without a source it writes the same starter canvas as the New button, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Reading whole files wastes context. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.
+Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `list_links`, `backlinks`, `search_linked`. `create_canvas` takes an `id` and an optional `source`; without a source it writes the same starter canvas as the New button, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Reading whole files wastes context. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.
 
 ## 7. Use a canvas in a normal React app
 

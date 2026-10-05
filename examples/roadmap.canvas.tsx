@@ -100,21 +100,6 @@ export default function Roadmap() {
         <Card>
           <CardHeader>
             <Row gap={8}>
-              <Text weight="semibold">Open knowledge format</Text>
-              <Pill tone="info" size="sm">Knowledge</Pill>
-            </Row>
-          </CardHeader>
-          <CardBody>
-            <Text>
-              Canvases instead of Markdown files as a knowledge base. Canvases link to each other,
-              and agents follow those links through MCP and HTTP to find information across
-              linked canvases.
-            </Text>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardHeader>
-            <Row gap={8}>
               <Text weight="semibold">useCanvasAction connector</Text>
               <Pill tone="info" size="sm">SDK</Pill>
             </Row>

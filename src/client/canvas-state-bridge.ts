@@ -43,7 +43,10 @@ export function createHttpCanvasStateStore(
 ): CanvasStateStore {
   const bag: Record<string, unknown> = { ...boot.state };
   const fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
-  const url = `/api/canvas/${encodeURIComponent(boot.canvasId)}/state`;
+  const url = `/api/canvas/${boot.canvasId
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")}/state`;
   // ponytail: serialize writes so rapid set()s don't clobber; ceiling = multi-tab; upgrade = ETag/merge
   let tail: Promise<void> = Promise.resolve();
 

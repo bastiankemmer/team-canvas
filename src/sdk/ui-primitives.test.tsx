@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   Button,
   Callout,
+  CanvasLink,
   Card,
   CardBody,
   CardHeader,
@@ -142,6 +143,94 @@ function Task3Fixture() {
 }
 
 describe("SDK UI / forms / misc", () => {
+  it('@task-1: the anchor href is "/canvas/billing", the text is "billing", there is no target or rel, color and underline match Link then style, spaces encode, unsafe ids still render, and https Link opens in a new tab', () => {
+    expect(barrel.CanvasLink).toBeTypeOf("function");
+
+    const { container, unmount } = render(
+      createElement(
+        "div",
+        null,
+        createElement(CanvasLink, { to: "billing" }, "billing"),
+        createElement(
+          CanvasLink,
+          { to: "bill ing", style: { color: "rgb(1, 2, 3)" } },
+          "x",
+        ),
+        createElement(CanvasLink, { to: "../x" }, "unsafe"),
+        createElement(Link, { href: "https://example.com" }, "docs"),
+      ),
+    );
+
+    const billing = container.querySelector('a[href="/canvas/billing"]');
+    expect(billing).not.toBeNull();
+    expect(billing?.textContent).toBe("billing");
+    expect(billing?.getAttribute("target")).toBeNull();
+    expect(billing?.getAttribute("rel")).toBeNull();
+
+    const spaced = container.querySelector('a[href="/canvas/bill%20ing"]');
+    expect(spaced).not.toBeNull();
+    expect(spaced?.textContent).toBe("x");
+    expect(spaced?.getAttribute("target")).toBeNull();
+    expect(spaced?.getAttribute("rel")).toBeNull();
+
+    const unsafe = container.querySelector('a[href="/canvas/..%2Fx"]');
+    expect(unsafe).not.toBeNull();
+    expect(unsafe?.textContent).toBe("unsafe");
+
+    const external = container.querySelector('a[href="https://example.com"]');
+    expect(external?.getAttribute("target")).toBe("_blank");
+    expect(external?.getAttribute("rel")).toBe("noopener noreferrer");
+
+    const billingStyle = (billing as HTMLElement).style;
+    const linkStyle = (external as HTMLElement).style;
+    expect(billingStyle.color).toBe(linkStyle.color);
+    expect(billingStyle.color).not.toBe("");
+    expect(billingStyle.textDecoration).toBe("underline");
+    expect(linkStyle.textDecoration).toBe("underline");
+
+    const spacedStyle = (spaced as HTMLElement).style;
+    expect(spacedStyle.color).toBe("rgb(1, 2, 3)");
+    expect(spacedStyle.textDecoration).toBe("underline");
+
+    unmount();
+  });
+
+  it('@task-6: the anchor href is "/canvas/guides/editing-workflow" and the anchor has no target', () => {
+    const { container, unmount } = render(
+      createElement(
+        "div",
+        null,
+        createElement(
+          CanvasLink,
+          { to: "guides/editing-workflow" },
+          "Editing workflow",
+        ),
+        createElement(CanvasLink, { to: "guides/bill ing" }, "x"),
+        createElement(CanvasLink, { to: "bill ing" }, "x"),
+        createElement(CanvasLink, { to: "../x" }, "x"),
+      ),
+    );
+
+    const nested = container.querySelector(
+      'a[href="/canvas/guides/editing-workflow"]',
+    );
+    expect(nested).not.toBeNull();
+    expect(nested?.textContent).toBe("Editing workflow");
+    expect(nested?.getAttribute("target")).toBeNull();
+
+    expect(
+      container.querySelector('a[href="/canvas/guides/bill%20ing"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('a[href="/canvas/bill%20ing"]'),
+    ).not.toBeNull();
+    const unsafe = container.querySelector('a[href="/canvas/..%2Fx"]');
+    expect(unsafe).not.toBeNull();
+    expect(unsafe?.getAttribute("target")).toBeNull();
+
+    unmount();
+  });
+
   it("@task-3: layout, forms, collapsible, swatch, todo, and usage primitives render without error", () => {
     const { container, unmount } = render(createElement(Task3Fixture));
 

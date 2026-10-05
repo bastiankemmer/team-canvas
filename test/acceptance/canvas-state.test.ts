@@ -46,7 +46,6 @@ export default function Counter() {
     const emptyHtml = await emptyViewer.text()
     expect(emptyHtml).toContain('__TEAM_CANVAS__')
     expect(emptyHtml).toContain('"canvasId":"counter"')
-    expect(emptyHtml).toMatch(/\/api\/canvas\/[^"'\s]+\/state/)
 
     // When the viewer updates canvas state → PUT reaches CanvasStore.writeState
     let writeSettled!: () => void

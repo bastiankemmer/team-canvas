@@ -19,7 +19,9 @@ team-canvas serve ./canvases            # or: npx team-canvas serve ./canvases
                                         # http://0.0.0.0:3847
 ```
 
-`./canvases` is a folder of `*.canvas.tsx` files. Open the URL, upload a canvas or drop files into the folder, and click **Open**. Use `--host` and `--port` to change the bind address (default `0.0.0.0:3847`).
+`./canvases` is the store root: a folder of `*.canvas.tsx` files. A canvas id may contain `/`. The library is a tree. Upload is one file in the store root; you can also drop files into the folder. Open the URL and click **Open**. Use `--host` and `--port` to change the bind address (default `0.0.0.0:3847`).
+
+The example is served with `team-canvas serve examples/okf`. Those ids start at `team-canvas/index`, `guides/editing-workflow`, and `reference/mcp-tools`. An OKF root is `<project-name>/index`. The library toggle is Folders (filesystem) and Knowledge (canvases reached from each id whose last segment is `index`, with everything else under Unlinked).
 
 New here? [Getting started](docs/getting-started.md) walks through it with screenshots.
 
@@ -31,7 +33,7 @@ npx team-canvas convert --from <old-module> ./canvases
 
 ## What you get
 
-- **Library** at `/`: lists canvases. **New** creates a canvas from a name and opens it in the editor; upload by button or drag and drop; Open, Edit and Copy link per canvas.
+- **Library** at `/`: the library is a tree. **New** creates a canvas from an id and opens it in the editor; upload is one file in the store root (button or drag and drop); Open, Edit and Copy link per canvas.
 - **Viewer** at `/canvas/:id`: renders the canvas and rebuilds live when the file changes.
 - **Editor** at `/canvas/:id/edit` with a **UI | Code** switch:
   - **UI**: live preview plus *Oriented Add*. It finds a repeating block in the canvas (for example a `Card` with a `Button`), clones it with blank slots, and you fill in the text. The result is real `.canvas.tsx` source, with the same handlers wired.
@@ -58,7 +60,6 @@ Planned:
   - **Delivery**: every MCP response carries a `notices[]` field for the caller (conflict, escalated, settled). There is no push: an agent sees a notice the next time it calls a tool. A blocking `await_messages` tool or Cursor hooks can be added later if that proves too slow.
   - Not planned for v1: free-form agent chat, a judge agent, rejecting writes that contradict a settled decision (warn only).
 - Sessions: upload a canvas and invite collaborators, with MCP support for those sessions.
-- Open knowledge format: canvases instead of Markdown files as a knowledge base. Canvases link to each other, and agents can follow those links through MCP and HTTP to find information across linked canvases.
 - A connector for `useCanvasAction` (open agent, open file, new chat), which is a logged no-op today.
 
 ### HTTP API
@@ -71,6 +72,9 @@ Planned:
 | `POST /api/canvas/:id/replace` | Replace exact text in place, without rewriting the file. JSON body `{"old_string": "...", "new_string": "...", "replace_all"?: true}`. `200 {"ok": true, "id": "...", "replacements": 1}`; `400` if the text is not found or matches more than once (unless `replace_all`). |
 | `GET /api/canvas/:id/check` | Does the canvas still build? `200 {"ok": true, "id": "..."}` or `{"ok": false, "id": "...", "error": "12:5 ..."}`. |
 | `GET /api/canvas/:id/search?q=` | Search one canvas source. |
+| `GET /api/canvas/:id/links` | Outgoing links to other canvases. |
+| `GET /api/canvas/:id/backlinks` | Canvases that link here. |
+| `GET /api/canvas/:id/search-linked?q=` | Search source in those direct linked canvases. |
 | `GET /api/canvas/:id/orientation` | Repeating pattern and whether Add is available. |
 | `POST /api/canvas/:id/add-oriented`, `/fill-slots` | Oriented Add. |
 | `GET` / `PUT /api/canvas/:id/state` | Canvas state. |
@@ -81,7 +85,7 @@ Planned:
 npx team-canvas mcp ./canvases          # stdio server
 ```
 
-Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `check_canvas`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`. Use `search_source` to keep context small instead of reading whole files, and `replace_in_source` to change part of a canvas: `write_source` replaces the entire file. Call `check_canvas` after edits: it returns build errors as `line:col message`.
+Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `check_canvas`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `list_links`, `backlinks`, `search_linked`. Use `search_source` to keep context small instead of reading whole files, and `replace_in_source` to change part of a canvas: `write_source` replaces the entire file. Call `check_canvas` after edits: it returns build errors as `line:col message`.
 
 Example MCP client config (`mcp.json`):
 
@@ -114,7 +118,7 @@ Ports and adapters, so storage and login can be swapped without touching the res
 
 - `CanvasStore` port (`src/ports`, adapters under `src/adapters/{store,auth,http,mcp}`): list, read and write source and state. Shipped adapter: local filesystem. New stores (FTP, Samba, S3, ...) only need to implement this port.
 - `Auth` port: shipped adapter `DisabledAuthAdapter` (no login, the default). Add your own for password or OIDC.
-- Shared edit operations (`src/app/edit`) are used by both the HTTP and the MCP adapters, and return the same result shape (`{ ok, id, slots }`, slots as `{ id, label }` in document order).
+- Shared edit operations (`src/app/edit`) are used by both the HTTP and the MCP adapters. `add_oriented` and `fill_slots` return `{ ok, id, slots }`, slots as `{ id, label }` in document order. Link following (`list_links`, `backlinks`, `search_linked`) returns the list, backlink, and search arrays.
 - The SDK (`src/sdk`) provides the `team-canvas/canvas` surface: layout, forms, charts, diff view, todo list, DAG layout and theme hooks.
 
 ## Security
