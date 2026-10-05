@@ -1435,6 +1435,111 @@ export default function Solo() {
       watchSpy.mockRestore()
     }
   })
+
+  it('GET / and GET /index.html include the knowledge root and missing marker; a non-ENOENT read is HTTP 500; an empty store skips source reads', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-knowledge-'))
+    const indexSource = `import { CanvasLink } from "team-canvas/canvas";
+export default function Index() {
+  return (
+    <>
+      <CanvasLink to="guides/real">Real</CanvasLink>
+      <CanvasLink to="missing/gone">Gone</CanvasLink>
+    </>
+  );
+}
+`
+    const sources: Record<string, string> = {
+      'team-canvas/index': indexSource,
+      'guides/real': 'export default function Real() { return null }\n',
+    }
+    const linked: CanvasStore = {
+      list: async () => ['team-canvas/index', 'guides/real'],
+      readSource: async (id) => {
+        const source = sources[id]
+        if (source === undefined) throw new Error(`unexpected read ${id}`)
+        return source
+      },
+      writeSource: async () => {},
+      readState: async () => ({}),
+      writeState: async () => {},
+    }
+    const server = await startHttpServer({
+      root,
+      host: '127.0.0.1',
+      port: 0,
+      store: linked,
+    })
+    servers.push(server)
+
+    for (const pathName of ['/', '/index.html']) {
+      const res = await fetch(`${server.url}${pathName}`)
+      expect(res.status).toBe(200)
+      const html = await res.text()
+      expect(html).toContain('data-shell="index"')
+      expect(html).toContain('>team-canvas/index</summary>')
+      expect(html).toContain('data-missing="missing/gone"')
+      expect(html).toContain('>missing<')
+    }
+
+    const broken: CanvasStore = {
+      list: async () => ['team-canvas/index'],
+      readSource: async () => {
+        const err = new Error('disk read failed') as NodeJS.ErrnoException
+        err.code = 'EIO'
+        throw err
+      },
+      writeSource: async () => {},
+      readState: async () => ({}),
+      writeState: async () => {},
+    }
+    const failing = await startHttpServer({
+      root,
+      host: '127.0.0.1',
+      port: 0,
+      store: broken,
+    })
+    servers.push(failing)
+    const failed = await fetch(`${failing.url}/`)
+    expect(failed.status).toBe(500)
+    expect(failed.headers.get('content-type')).toMatch(/text\/plain/)
+    const failure = await failed.text()
+    expect(failure).toBe('disk read failed')
+    expect(failure).not.toContain('data-shell="index"')
+    expect(failure).not.toContain('data-library-toggle')
+
+    let reads = 0
+    let lists = 0
+    const empty: CanvasStore = {
+      list: async () => {
+        lists += 1
+        return []
+      },
+      readSource: async () => {
+        reads += 1
+        return ''
+      },
+      writeSource: async () => {},
+      readState: async () => ({}),
+      writeState: async () => {},
+    }
+    const blank = await startHttpServer({
+      root,
+      host: '127.0.0.1',
+      port: 0,
+      store: empty,
+    })
+    servers.push(blank)
+    const blankPage = await fetch(`${blank.url}/`)
+    expect(blankPage.status).toBe(200)
+    expect(blankPage.headers.get('content-type')).toMatch(/text\/html/)
+    const blankHtml = await blankPage.text()
+    expect(blankHtml).toContain(
+      'No canvases yet. Create one with New or upload a .canvas.tsx file.',
+    )
+    expect(blankHtml).not.toContain('data-library-toggle')
+    expect(reads).toBe(0)
+    expect(lists).toBe(1)
+  })
 })
 
 describe('parseCanvasUploadName', () => {

@@ -1,5 +1,5 @@
 import { JSDOM } from "jsdom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   canvasPaletteDark,
   canvasPaletteLight,
@@ -315,5 +315,271 @@ describe("host-ui shell HTML markers", () => {
     expect(editDom.window.document.querySelector('a[href="/canvas/guides/editing-workflow"]')?.textContent).toBe(
       "View",
     );
+  });
+
+  it("@task-2: Folders is the visible panel and Knowledge is hidden on first paint, including when an index root exists; toggling shows one panel and updates aria-pressed and hidden without storage or fetch", () => {
+    const ids = [
+      "team-canvas/index",
+      "guides/bill ing",
+      "reference/http-api",
+      "z/late",
+      "proj/index",
+      "m/two",
+      "m/one",
+      "solo/index",
+      "notes/loose",
+    ];
+    const tree = {
+      roots: [
+        {
+          id: "team-canvas/index",
+          missing: false,
+          children: [
+            {
+              id: "guides/bill ing",
+              missing: false,
+              children: [{ id: "reference/http-api", missing: false, children: [] }],
+            },
+            { id: "z/late", missing: false, children: [] },
+            { id: "gone/topic", missing: true, children: [] },
+          ],
+        },
+        {
+          id: "proj/index",
+          missing: false,
+          children: [
+            { id: "m/two", missing: false, children: [] },
+            { id: "m/one", missing: false, children: [] },
+          ],
+        },
+        { id: "solo/index", missing: false, children: [] },
+      ],
+      unlinked: ["notes/loose"],
+    };
+    const html = indexShellHtml(ids, tree);
+    const dom = new JSDOM(html, {
+      runScripts: "dangerously",
+      url: "http://canvas.test/",
+    });
+    const doc = dom.window.document;
+    const itemLabel = (li: Element) => {
+      const details = [...li.children].find((el) => el.tagName === "DETAILS");
+      if (details) {
+        return [...details.children].find((el) => el.tagName === "SUMMARY")?.textContent ?? "";
+      }
+      return li.querySelector(".canvas-id")?.textContent ?? "";
+    };
+    const shown = () =>
+      [...doc.querySelectorAll("[data-library-panel]")].filter((panel) => !panel.hasAttribute("hidden"));
+
+    const folders = doc.querySelector('ul[data-shell="index"]')!;
+    const knowledge = doc.querySelector('ul[data-shell="knowledge"]')!;
+    const foldersBtn = doc.querySelector<HTMLButtonElement>('[data-library-toggle="folders"]')!;
+    const knowledgeBtn = doc.querySelector<HTMLButtonElement>('[data-library-toggle="knowledge"]')!;
+    const heroKids = [...doc.querySelector(".library-hero")!.children];
+
+    expect(html).toContain('data-shell="index"');
+    expect(html).toContain('data-shell="knowledge"');
+    expect(folders.getAttribute("data-library-panel")).toBe("folders");
+    expect(knowledge.getAttribute("data-library-panel")).toBe("knowledge");
+    expect(folders.hasAttribute("hidden")).toBe(false);
+    expect(knowledge.hasAttribute("hidden")).toBe(true);
+    expect(foldersBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(knowledgeBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(foldersBtn.closest(".library-hero")).toBeTruthy();
+    expect(heroKids.findIndex((el) => el.classList.contains("library-meta"))).toBeLessThan(
+      heroKids.findIndex((el) => el.querySelector("[data-library-toggle]")),
+    );
+    expect(shown()).toEqual([folders]);
+
+    const plain = new JSDOM(indexShellHtml(ids)).window.document;
+    expect(plain.querySelector("[data-library-toggle]")).toBeNull();
+    expect(plain.querySelector("[data-library-panel]")).toBeNull();
+    expect(indexShellHtml(ids)).not.toContain("data-library-toggle");
+    expect(indexShellHtml(ids)).not.toContain('data-shell="knowledge"');
+    expect(plain.querySelector(".library-meta")?.nextSibling?.textContent?.trim() ?? "").toBe("");
+    expect(folders.innerHTML).toBe(plain.querySelector('ul[data-shell="index"]')!.innerHTML);
+
+    const empty = indexShellHtml([]);
+    expect(empty).toContain("No canvases yet");
+    expect(new JSDOM(empty).window.document.querySelector("[data-library-toggle]")).toBeNull();
+    expect(new JSDOM(empty).window.document.querySelector(".library-meta")?.nextSibling?.textContent?.trim() ?? "").toBe(
+      "",
+    );
+
+    const zeroWithTree = indexShellHtml([], {
+      roots: [{ id: "index", missing: false, children: [] }],
+      unlinked: [],
+    });
+    expect(zeroWithTree).toContain("No canvases yet");
+    expect(zeroWithTree).not.toContain("data-library-toggle");
+    expect(
+      new JSDOM(zeroWithTree).window.document.querySelector(".library-meta")?.nextSibling?.textContent?.trim() ?? "",
+    ).toBe("");
+
+    expect([...knowledge.children].map(itemLabel)).toEqual([
+      "team-canvas/index",
+      "proj/index",
+      "solo/index",
+      "Unlinked",
+    ]);
+    expect(knowledge.innerHTML).toContain(
+      knowledge.children[0]!.outerHTML + knowledge.children[1]!.outerHTML,
+    );
+    const team = [...knowledge.children].find((li) => itemLabel(li) === "team-canvas/index")!;
+    const teamDetails = team.querySelector("details") as HTMLDetailsElement;
+    expect(teamDetails.hasAttribute("open")).toBe(true);
+    expect(teamDetails.querySelector("summary")?.textContent).toBe("team-canvas/index");
+    expect(teamDetails.querySelector("summary")?.querySelector("a, button")).toBeNull();
+    expect(
+      [...teamDetails.children].find((el) => el.classList.contains("canvas-file"))?.textContent,
+    ).toBe("team-canvas/index.canvas.tsx");
+    const teamKids = teamDetails.querySelector("ul")!;
+    expect([...teamKids.children].map(itemLabel)).toEqual([
+      "guides/bill ing",
+      "z/late",
+      "gone/topic",
+    ]);
+    expect(teamKids.innerHTML).toContain(
+      teamKids.children[0]!.outerHTML + teamKids.children[1]!.outerHTML,
+    );
+
+    const branch = teamKids.children[0]!.querySelector("details") as HTMLDetailsElement;
+    expect(branch.hasAttribute("open")).toBe(false);
+    expect(branch.querySelector("summary")?.textContent).toBe("guides/bill ing");
+    expect(branch.querySelector("summary")?.querySelector("a, button")).toBeNull();
+    expect(
+      [...branch.children].find((el) => el.classList.contains("canvas-file"))?.textContent,
+    ).toBe("guides/bill ing.canvas.tsx");
+    expect([...branch.querySelector("ul")!.children].map(itemLabel)).toEqual(["reference/http-api"]);
+
+    const leaf = teamKids.children[1]!;
+    expect(leaf.classList.contains("canvas-row")).toBe(true);
+    expect(leaf.querySelector("details")).toBeNull();
+    expect(leaf.querySelector(".canvas-id")?.textContent).toBe("z/late");
+    expect(leaf.querySelector(".canvas-file")?.textContent).toBe("z/late.canvas.tsx");
+
+    const solo = [...knowledge.children].find((li) => itemLabel(li) === "solo/index")!;
+    expect(solo.classList.contains("canvas-row")).toBe(true);
+    expect(solo.querySelector("details")).toBeNull();
+    expect(solo.querySelector(".canvas-file")?.textContent).toBe("solo/index.canvas.tsx");
+
+    const broken = knowledge.querySelector('[data-missing="gone/topic"]')!;
+    expect(broken.querySelector(".canvas-id")?.textContent).toBe("gone/topic");
+    expect(broken.querySelector(".canvas-file")?.textContent).toBe("missing");
+    expect(broken.querySelector("a, button")).toBeNull();
+
+    const unlinked = [...knowledge.children].find((li) => itemLabel(li) === "Unlinked")!;
+    const unlinkedDetails = unlinked.querySelector("details") as HTMLDetailsElement;
+    expect(unlinkedDetails.hasAttribute("open")).toBe(false);
+    expect([...unlinkedDetails.querySelector("ul")!.children].map(itemLabel)).toEqual(["notes/loose"]);
+
+    const proj = [...knowledge.children].find((li) => itemLabel(li) === "proj/index")!;
+    expect([...proj.querySelector("details ul")!.children].map(itemLabel)).toEqual(["m/two", "m/one"]);
+
+    const actions = (root: ParentNode, id: string) =>
+      root.querySelector(`[data-copy-share="${id}"]`)?.closest(".canvas-actions")?.innerHTML;
+    for (const id of ["team-canvas/index", "guides/bill ing", "z/late", "notes/loose"]) {
+      expect(actions(knowledge, id)).toBe(actions(folders, id));
+      expect(actions(knowledge, id)).toContain(`href="/canvas/${id.split("/").map(encodeURIComponent).join("/")}"`);
+      expect(actions(knowledge, id)).toContain(`href="/canvas/${id.split("/").map(encodeURIComponent).join("/")}/edit"`);
+    }
+    expect(knowledge.innerHTML).toContain('href="/canvas/guides/bill%20ing"');
+    expect(knowledge.innerHTML).not.toContain("%2F");
+
+    const writes: string[] = [];
+    const fetches: string[] = [];
+    vi.spyOn(dom.window.localStorage, "setItem").mockImplementation((key) => {
+      writes.push(`local:${String(key)}`);
+    });
+    vi.spyOn(dom.window.sessionStorage, "setItem").mockImplementation((key) => {
+      writes.push(`session:${String(key)}`);
+    });
+    dom.window.fetch = (url: string) => {
+      fetches.push(String(url));
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(""), json: () => Promise.resolve({}) });
+    };
+    let copied = "";
+    Object.defineProperty(dom.window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText(text: string) {
+          copied = text;
+          return Promise.resolve();
+        },
+      },
+    });
+
+    const branchActions = [...branch.children].find((el) => el.classList.contains("canvas-actions"))!;
+    expect(branch.querySelector("summary")?.contains(branchActions)).toBe(false);
+    branchActions.querySelector("button")!.click();
+    expect(branch.open).toBe(false);
+    expect(copied).toBe("http://canvas.test/canvas/guides/bill%20ing");
+    const branchOpen = branchActions.querySelector("a")!;
+    branchOpen.addEventListener("click", (event) => event.preventDefault());
+    branchOpen.click();
+    expect(branch.open).toBe(false);
+    const teamOpen = [...teamDetails.children]
+      .find((el) => el.classList.contains("canvas-actions"))!
+      .querySelector("a")!;
+    teamOpen.addEventListener("click", (event) => event.preventDefault());
+    teamOpen.click();
+    expect(teamDetails.open).toBe(true);
+
+    knowledgeBtn.click();
+    expect(shown()).toEqual([knowledge]);
+    expect(folders.hasAttribute("hidden")).toBe(true);
+    expect(knowledge.hasAttribute("hidden")).toBe(false);
+    expect(foldersBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(knowledgeBtn.getAttribute("aria-pressed")).toBe("true");
+    foldersBtn.click();
+    expect(shown()).toEqual([folders]);
+    expect(folders.hasAttribute("hidden")).toBe(false);
+    expect(knowledge.hasAttribute("hidden")).toBe(true);
+    expect(foldersBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(knowledgeBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(fetches).toEqual([]);
+    expect(writes).toEqual([]);
+
+    const looseHtml = indexShellHtml(["b", "a"], { roots: [], unlinked: ["b", "a"] });
+    const looseDoc = new JSDOM(looseHtml, {
+      runScripts: "dangerously",
+      url: "http://canvas.test/",
+    }).window.document;
+    const looseKnowledge = looseDoc.querySelector('ul[data-shell="knowledge"]')!;
+    const looseDetails = looseKnowledge.querySelector("details") as HTMLDetailsElement;
+    expect(looseDoc.querySelector('[data-library-toggle="folders"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(looseKnowledge.hasAttribute("hidden")).toBe(true);
+    expect(looseDetails.hasAttribute("open")).toBe(true);
+    expect(looseDetails.querySelector("summary")?.textContent).toBe("Unlinked");
+    looseDoc.querySelector<HTMLButtonElement>('[data-library-toggle="knowledge"]')!.click();
+    expect(looseKnowledge.hasAttribute("hidden")).toBe(false);
+    expect(looseDetails.open).toBe(true);
+    expect([...looseDetails.querySelector("ul")!.children].map(itemLabel)).toEqual(["b", "a"]);
+    const looseRows = looseDetails.querySelector("ul")!;
+    expect(looseRows.innerHTML).toBe(looseRows.children[0]!.outerHTML + looseRows.children[1]!.outerHTML);
+    expect(looseDetails.querySelector(".canvas-row a")?.textContent).toBe("Open");
+
+    const linkedOnly = indexShellHtml(["proj/index", "index"], {
+      roots: [
+        {
+          id: "index",
+          missing: false,
+          children: [
+            { id: "a", missing: false, children: [] },
+            { id: "b", missing: false, children: [] },
+          ],
+        },
+        { id: "proj/index", missing: false, children: [] },
+      ],
+      unlinked: [],
+    });
+    const linkedKnowledge = new JSDOM(linkedOnly, {
+      runScripts: "dangerously",
+      url: "http://canvas.test/",
+    }).window.document.querySelector('ul[data-shell="knowledge"]')!;
+    expect(linkedKnowledge.textContent ?? "").not.toContain("Unlinked");
+    expect(linkedKnowledge.innerHTML).toBe([...linkedKnowledge.children].map((el) => el.outerHTML).join(""));
+    expect(linkedOnly).toContain("data-library-toggle");
   });
 });

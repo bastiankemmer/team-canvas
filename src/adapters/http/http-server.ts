@@ -5,6 +5,7 @@ import type { Auth } from '../../ports/auth.js'
 import type { CanvasStore } from '../../ports/canvas-store.js'
 import { bundleCanvas } from '../../app/build/bundle-canvas.js'
 import { createCanvasEditOps, type ReplaceResult, type SlotsResult } from '../../app/edit/canvas-edit-ops.js'
+import { loadLinkTree } from '../../app/edit/canvas-link-tree.js'
 import { createAuthAdapter } from '../auth/create-auth.js'
 import {
   assertSafeCanvasId,
@@ -442,8 +443,10 @@ export async function startHttpServer(
 
         if (pathName === '/' || pathName === '/index.html') {
           const ids = await store.list()
+          // Empty library lists once and does not read sources.
+          const tree = ids.length === 0 ? undefined : await loadLinkTree(store)
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-          res.end(indexShellHtml(ids))
+          res.end(indexShellHtml(ids, tree))
           return
         }
 
