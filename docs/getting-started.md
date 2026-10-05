@@ -18,7 +18,7 @@ No global install? `npx team-canvas serve ./canvases` does the same. To import `
 
 ## 2. Create a canvas
 
-Open the server URL, type a name in **New canvas** and press **New**. team-canvas writes a starter file into your folder and opens it in the editor, ready to change. Names use letters, digits, `-` and `_`, and an existing name is never overwritten.
+Open the server URL, type a name in **New canvas** and press **New**. team-canvas writes a starter file into your folder and opens it in the editor, ready to change. A canvas id may contain `/`. Each segment uses letters, digits, `-` and `_`, and an existing name is never overwritten.
 
 Or write the file yourself. Create `canvases/hello.canvas.tsx`:
 
@@ -41,9 +41,11 @@ A canvas has one default-exported component and imports everything it needs from
 
 ## 3. The library
 
-Open the server URL. The library lists every canvas in the folder. Besides **New**, you can **upload** a `.canvas.tsx` with the button or by dropping it on the page. Each canvas has **Open**, **Edit** and **Copy link**.
+Open the server URL. The library is a tree. Besides **New**, upload is one file in the store root, with the button or by dropping a `.canvas.tsx` on the page. Each canvas has **Open**, **Edit** and **Copy link**.
 
 ![Library page with the New canvas form, upload, and three canvases with Open, Edit and Copy link](images/library.png)
+
+The example is served with `team-canvas serve examples/okf`. Those ids start at `index`, `guides/editing-workflow`, and `reference/mcp-tools`.
 
 ## 4. The viewer
 

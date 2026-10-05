@@ -19,7 +19,9 @@ team-canvas serve ./canvases            # or: npx team-canvas serve ./canvases
                                         # http://0.0.0.0:3847
 ```
 
-`./canvases` is a folder of `*.canvas.tsx` files. Open the URL, upload a canvas or drop files into the folder, and click **Open**. Use `--host` and `--port` to change the bind address (default `0.0.0.0:3847`).
+`./canvases` is the store root: a folder of `*.canvas.tsx` files. A canvas id may contain `/`. The library is a tree. Upload is one file in the store root; you can also drop files into the folder. Open the URL and click **Open**. Use `--host` and `--port` to change the bind address (default `0.0.0.0:3847`).
+
+The example is served with `team-canvas serve examples/okf`. Those ids start at `index`, `guides/editing-workflow`, and `reference/mcp-tools`.
 
 New here? [Getting started](docs/getting-started.md) walks through it with screenshots.
 
@@ -31,7 +33,7 @@ npx team-canvas convert --from <old-module> ./canvases
 
 ## What you get
 
-- **Library** at `/`: lists canvases. **New** creates a canvas from a name and opens it in the editor; upload by button or drag and drop; Open, Edit and Copy link per canvas.
+- **Library** at `/`: the library is a tree. **New** creates a canvas from an id and opens it in the editor; upload is one file in the store root (button or drag and drop); Open, Edit and Copy link per canvas.
 - **Viewer** at `/canvas/:id`: renders the canvas and rebuilds live when the file changes.
 - **Editor** at `/canvas/:id/edit` with a **UI | Code** switch:
   - **UI**: live preview plus *Oriented Add*. It finds a repeating block in the canvas (for example a `Card` with a `Button`), clones it with blank slots, and you fill in the text. The result is real `.canvas.tsx` source, with the same handlers wired.

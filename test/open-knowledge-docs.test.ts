@@ -59,4 +59,30 @@ describe("open knowledge docs", () => {
 
     expect(roadmap).not.toContain("Open knowledge format");
   });
+
+  it("@task-9: both docs say a canvas id may contain /, the library is a tree, upload is one file in the store root, and the example is served with team-canvas serve examples/okf so those ids start at index, guides/editing-workflow, and reference/mcp-tools", () => {
+    const readme = readFileSync(path.join(root, "README.md"), "utf8");
+    const gettingStarted = readFileSync(
+      path.join(root, "docs/getting-started.md"),
+      "utf8",
+    );
+
+    for (const doc of [readme, gettingStarted]) {
+      expect(doc).toContain("canvas id may contain `/`");
+      expect(doc).toContain("library is a tree");
+      expect(doc).toContain("upload is one file in the store root");
+      expect(doc).toContain("team-canvas serve examples/okf");
+      expect(doc).toContain(
+        "ids start at `index`, `guides/editing-workflow`, and `reference/mcp-tools`",
+      );
+      expect(doc).not.toContain("spec/format");
+      expect(doc).not.toMatch(/\bCursor\b/);
+    }
+
+    expect(gettingStarted).toContain("images/library.png");
+    expect(gettingStarted).toContain("images/viewer.png");
+    expect(gettingStarted).toContain("images/oriented-add.png");
+    expect(gettingStarted).toContain("images/oriented-filled.png");
+    expect(gettingStarted).toContain("images/code-view.png");
+  });
 });
