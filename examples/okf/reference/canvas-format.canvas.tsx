@@ -29,7 +29,7 @@ export default function CanvasFormat() {
       <H2>Related</H2>
       <Stack gap={4}>
         <Text>
-          <CanvasLink to="index">Knowledge base index</CanvasLink>
+          <CanvasLink to="team-canvas/index">Knowledge base index</CanvasLink>
         </Text>
         <Text>
           <CanvasLink to="guides/editing-workflow">Editing workflow</CanvasLink>: check_canvas reports

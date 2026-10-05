@@ -60,7 +60,7 @@ describe("open knowledge docs", () => {
     expect(roadmap).not.toContain("Open knowledge format");
   });
 
-  it("@task-9: both docs say a canvas id may contain /, the library is a tree, upload is one file in the store root, and the example is served with team-canvas serve examples/okf so those ids start at index, guides/editing-workflow, and reference/mcp-tools", () => {
+  it("@task-9: both docs say a canvas id may contain /, the library is a tree, upload is one file in the store root, and the example is served with team-canvas serve examples/okf so those ids start at team-canvas/index, guides/editing-workflow, and reference/mcp-tools", () => {
     const readme = readFileSync(path.join(root, "README.md"), "utf8");
     const gettingStarted = readFileSync(
       path.join(root, "docs/getting-started.md"),
@@ -73,8 +73,13 @@ describe("open knowledge docs", () => {
       expect(doc).toContain("upload is one file in the store root");
       expect(doc).toContain("team-canvas serve examples/okf");
       expect(doc).toContain(
-        "ids start at `index`, `guides/editing-workflow`, and `reference/mcp-tools`",
+        "ids start at `team-canvas/index`, `guides/editing-workflow`, and `reference/mcp-tools`",
       );
+      expect(doc).toContain(
+        "library toggle is Folders (filesystem) and Knowledge (canvases reached from each id whose last segment is `index`, with everything else under Unlinked)",
+      );
+      expect(doc).toContain("OKF root is `<project-name>/index`");
+      expect(doc).not.toContain("ids start at `index`,");
       expect(doc).not.toContain("spec/format");
       expect(doc).not.toMatch(/\bCursor\b/);
     }

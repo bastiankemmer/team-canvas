@@ -36,7 +36,7 @@ export default function Architecture() {
           <CanvasLink to="reference/canvas-format">Canvas format</CanvasLink>: what the store holds.
         </Text>
         <Text>
-          <CanvasLink to="index">Knowledge base index</CanvasLink>
+          <CanvasLink to="team-canvas/index">Knowledge base index</CanvasLink>
         </Text>
       </Stack>
     </Stack>

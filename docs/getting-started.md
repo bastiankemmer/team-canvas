@@ -41,11 +41,11 @@ A canvas has one default-exported component and imports everything it needs from
 
 ## 3. The library
 
-Open the server URL. The library is a tree. Besides **New**, upload is one file in the store root, with the button or by dropping a `.canvas.tsx` on the page. Each canvas has **Open**, **Edit** and **Copy link**.
+Open the server URL. The library is a tree. Besides **New**, upload is one file in the store root, with the button or by dropping a `.canvas.tsx` on the page. Each canvas has **Open**, **Edit** and **Copy link**. The library toggle is Folders (filesystem) and Knowledge (canvases reached from each id whose last segment is `index`, with everything else under Unlinked).
 
 ![Library page with the New canvas form, upload, and three canvases with Open, Edit and Copy link](images/library.png)
 
-The example is served with `team-canvas serve examples/okf`. Those ids start at `index`, `guides/editing-workflow`, and `reference/mcp-tools`.
+The example is served with `team-canvas serve examples/okf`. Those ids start at `team-canvas/index`, `guides/editing-workflow`, and `reference/mcp-tools`. An OKF root is `<project-name>/index`.
 
 ## 4. The viewer
 

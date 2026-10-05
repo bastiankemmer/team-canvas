@@ -21,7 +21,7 @@ team-canvas serve ./canvases            # or: npx team-canvas serve ./canvases
 
 `./canvases` is the store root: a folder of `*.canvas.tsx` files. A canvas id may contain `/`. The library is a tree. Upload is one file in the store root; you can also drop files into the folder. Open the URL and click **Open**. Use `--host` and `--port` to change the bind address (default `0.0.0.0:3847`).
 
-The example is served with `team-canvas serve examples/okf`. Those ids start at `index`, `guides/editing-workflow`, and `reference/mcp-tools`.
+The example is served with `team-canvas serve examples/okf`. Those ids start at `team-canvas/index`, `guides/editing-workflow`, and `reference/mcp-tools`. An OKF root is `<project-name>/index`. The library toggle is Folders (filesystem) and Knowledge (canvases reached from each id whose last segment is `index`, with everything else under Unlinked).
 
 New here? [Getting started](docs/getting-started.md) walks through it with screenshots.
 

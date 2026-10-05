@@ -37,7 +37,7 @@ export default function EditingWorkflow() {
           enforces.
         </Text>
         <Text>
-          <CanvasLink to="index">Knowledge base index</CanvasLink>
+          <CanvasLink to="team-canvas/index">Knowledge base index</CanvasLink>
         </Text>
       </Stack>
     </Stack>

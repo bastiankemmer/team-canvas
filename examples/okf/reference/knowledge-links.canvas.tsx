@@ -40,7 +40,7 @@ export default function KnowledgeLinks() {
           <CanvasLink to="reference/http-api">HTTP API</CanvasLink>
         </Text>
         <Text>
-          <CanvasLink to="index">Knowledge base index</CanvasLink>: the entry point.
+          <CanvasLink to="team-canvas/index">Knowledge base index</CanvasLink>: the entry point.
         </Text>
       </Stack>
     </Stack>
