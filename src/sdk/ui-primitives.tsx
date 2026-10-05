@@ -464,6 +464,25 @@ export type CanvasLinkProps = {
   style?: CSSProperties;
 };
 
+// ponytail: local safe-id rule so the SDK does not import the store. Ceiling: symlink escape is only checked in the store adapter.
+function isSafeCanvasId(id: string): boolean {
+  if (!id || id.includes("..") || id.includes("\\") || isAbsoluteCanvasId(id)) {
+    return false;
+  }
+  return id.split("/").every((segment) => segment !== "" && segment !== ".");
+}
+
+function isAbsoluteCanvasId(id: string): boolean {
+  return id.startsWith("/") || /^[A-Za-z]:\//.test(id);
+}
+
+function canvasHref(id: string): string {
+  const path = isSafeCanvasId(id)
+    ? id.split("/").map((segment) => encodeURIComponent(segment)).join("/")
+    : encodeURIComponent(id);
+  return "/canvas/" + path;
+}
+
 export function CanvasLink({
   to,
   children,
@@ -472,7 +491,7 @@ export function CanvasLink({
   const theme = useHostTheme();
   return (
     <a
-      href={"/canvas/" + encodeURIComponent(to)}
+      href={canvasHref(to)}
       style={{
         color: theme.text.link,
         textDecoration: "underline",

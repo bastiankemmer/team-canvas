@@ -195,6 +195,42 @@ describe("SDK UI / forms / misc", () => {
     unmount();
   });
 
+  it('@task-6: the anchor href is "/canvas/guides/editing-workflow" and the anchor has no target', () => {
+    const { container, unmount } = render(
+      createElement(
+        "div",
+        null,
+        createElement(
+          CanvasLink,
+          { to: "guides/editing-workflow" },
+          "Editing workflow",
+        ),
+        createElement(CanvasLink, { to: "guides/bill ing" }, "x"),
+        createElement(CanvasLink, { to: "bill ing" }, "x"),
+        createElement(CanvasLink, { to: "../x" }, "x"),
+      ),
+    );
+
+    const nested = container.querySelector(
+      'a[href="/canvas/guides/editing-workflow"]',
+    );
+    expect(nested).not.toBeNull();
+    expect(nested?.textContent).toBe("Editing workflow");
+    expect(nested?.getAttribute("target")).toBeNull();
+
+    expect(
+      container.querySelector('a[href="/canvas/guides/bill%20ing"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('a[href="/canvas/bill%20ing"]'),
+    ).not.toBeNull();
+    const unsafe = container.querySelector('a[href="/canvas/..%2Fx"]');
+    expect(unsafe).not.toBeNull();
+    expect(unsafe?.getAttribute("target")).toBeNull();
+
+    unmount();
+  });
+
   it("@task-3: layout, forms, collapsible, swatch, todo, and usage primitives render without error", () => {
     const { container, unmount } = render(createElement(Task3Fixture));
 
