@@ -44,6 +44,7 @@ describe("extractCanvasLinks", () => {
 
     expect(extractCanvasLinks(source)).toEqual([
       { to: "billing", line: lineOf(source, "const aside"), label: "Billing" },
+      { to: "a/b", line: lineOf(source, 'to="a/b"'), label: "Slash" },
       { to: "billing", line: lineOf(source, ">Second<"), label: "Second" },
       { to: "notes", line: lineOf(source, 'to="notes"'), label: "Self" },
       { to: "billing", line: lineOf(source, 'to={"billing"}>Brace'), label: "Brace" },
@@ -208,6 +209,8 @@ describe("extractCanvasLinks", () => {
     ].join("\n");
 
     expect(extractCanvasLinks(source)).toEqual([
+      { to: "a/b", line: lineOf(source, "a&#47;b"), label: "Slash" },
+      { to: "a/b", line: lineOf(source, 'to="a/b"'), label: "SlashRaw" },
       { to: "ok", line: lineOf(source, 'to="ok"'), label: "Kept" },
     ]);
   });
