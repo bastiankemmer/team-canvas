@@ -1,18 +1,40 @@
-/** Names for new canvases: one path segment of letters, digits, "-" and "_". */
-const NEW_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+/** One path segment: letters, digits, "-" and "_", starting with a letter or digit. */
+const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/** Route words. Illegal only as the last segment of an id that contains "/". */
+const RESERVED_LAST = new Set([
+  "edit",
+  "source",
+  "state",
+  "watch",
+  "check",
+  "replace",
+  "search",
+  "search-linked",
+  "orientation",
+  "add-oriented",
+  "fill-slots",
+  "links",
+  "backlinks",
+]);
 
 export function assertNewCanvasId(id: string): void {
-  if (!NEW_ID.test(id)) {
+  const segments = id.split("/");
+  const last = segments[segments.length - 1] ?? "";
+  if (
+    segments.some((segment) => !SEGMENT.test(segment)) ||
+    (id.includes("/") && RESERVED_LAST.has(last))
+  ) {
     throw new Error(
       `Invalid canvas id "${id}": use letters, digits, "-" and "_", starting with a letter or digit`,
     );
   }
 }
 
-/** "my-canvas" -> "MyCanvas"; a leading digit gets a "Canvas" prefix. */
+/** "my-canvas" -> "MyCanvas"; "notes/demo" -> "NotesDemo"; a leading digit gets a "Canvas" prefix. */
 function componentName(id: string): string {
   const pascal = id
-    .split(/[-_]+/)
+    .split(/[-_/]+/)
     .filter(Boolean)
     .map((w) => w[0]!.toUpperCase() + w.slice(1))
     .join("");
