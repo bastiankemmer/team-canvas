@@ -340,6 +340,7 @@ label.btn:focus-visible {
   grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
   gap: 0.85rem;
 }
+.canvas-list > li:has(> details) { grid-column: 1 / -1; }
 .canvas-row {
   display: flex;
   flex-direction: column;
@@ -663,13 +664,16 @@ html[data-edit-mode="code"] .edit-code-pane { border-right: 1px solid var(--bord
 a { color: var(--accent); }
 `.trim()
 
+const canvasPathJs = `function canvasPath(id){return String(id).split("/").map(function(part){return encodeURIComponent(part)}).join("/")}`
+
 const copyShareScript = String.raw`
 (function () {
+  ${canvasPathJs}
   document.querySelectorAll("[data-copy-share]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var id = btn.getAttribute("data-copy-share");
       if (!id) return;
-      var url = location.origin + "/canvas/" + id;
+      var url = location.origin + "/canvas/" + canvasPath(id);
       var host = btn.parentElement;
       var feedback = host && host.querySelector("[data-copy-feedback]");
       function ok() {
@@ -693,6 +697,7 @@ const copyShareScript = String.raw`
 
 const libraryScript = String.raw`
 (function () {
+  ${canvasPathJs}
   var form = document.querySelector("[data-new-form]");
   var input = document.querySelector("[data-new-input]");
   var statusEl = document.querySelector("[data-new-status]");
@@ -715,7 +720,7 @@ const libraryScript = String.raw`
       body: JSON.stringify({ id: id }),
     }).then(function (res) {
       if (res.status === 201) {
-        location.href = "/canvas/" + encodeURIComponent(id) + "/edit";
+        location.href = "/canvas/" + canvasPath(id) + "/edit";
         return;
       }
       return res.text().then(function (body) {
@@ -731,6 +736,7 @@ const libraryScript = String.raw`
   });
 })();
 (function () {
+  ${canvasPathJs}
   var form = document.querySelector("[data-upload-form]");
   var statusEl = document.querySelector("[data-upload-status]");
   var fileInput = document.querySelector("[data-upload-input]");
@@ -816,7 +822,7 @@ const libraryScript = String.raw`
         if (res.status === 201) {
           return res.json().then(function (data) {
             if (data && data.id) {
-              location.href = "/canvas/" + encodeURIComponent(data.id);
+              location.href = "/canvas/" + canvasPath(data.id);
               return;
             }
             location.reload();
@@ -837,11 +843,12 @@ const libraryScript = String.raw`
 
 const editScript = String.raw`
 (function () {
+  ${canvasPathJs}
   var root = document.querySelector("[data-edit-chrome]");
   if (!root) return;
   var id = root.getAttribute("data-canvas-id");
   if (!id) return;
-  var base = "/api/canvas/" + encodeURIComponent(id);
+  var base = "/api/canvas/" + canvasPath(id);
   var statusEl = document.querySelector("[data-edit-status]");
   var addBtn = root.querySelector("[data-edit-add]");
   var orientMeta = root.querySelector("[data-edit-orient]");
@@ -1213,9 +1220,14 @@ export function escapeHtml(value: string): string {
     .replaceAll('"', '&quot;')
 }
 
+/** Each segment is encoded; "/" stays a slash. */
+function canvasPath(id: string): string {
+  return id.split('/').map((part) => encodeURIComponent(part)).join('/')
+}
+
 function canvasHeader(canvasId: string, mode: 'view' | 'edit'): string {
   const safe = escapeHtml(canvasId)
-  const enc = encodeURIComponent(canvasId)
+  const enc = canvasPath(canvasId)
   const tools =
     mode === 'view'
       ? `<a class="btn" href="/canvas/${enc}/edit">Edit</a>
@@ -1233,6 +1245,75 @@ function canvasHeader(canvasId: string, mode: 'view' | 'edit'): string {
     <a href="/">Canvases</a><span aria-hidden="true"> / </span><span class="crumb-id">${safe}</span>
   </nav>
   <div class="top-tools">${tools}</div>`
+}
+
+type LibraryNode =
+  | { kind: 'canvas'; name: string; id: string }
+  | { kind: 'folder'; name: string; children: LibraryNode[] }
+
+/** Folders exist only as prefixes of listed ids. Sorted by segment at each level. */
+function libraryTree(ids: string[]): LibraryNode[] {
+  type Bucket = {
+    folders: Map<string, Bucket>
+    canvases: { name: string; id: string }[]
+  }
+  const make = (): Bucket => ({ folders: new Map(), canvases: [] })
+  const root = make()
+  for (const id of ids) {
+    const parts = id.split('/')
+    let bucket = root
+    for (let i = 0; i < parts.length - 1; i++) {
+      const seg = parts[i] ?? ''
+      let next = bucket.folders.get(seg)
+      if (!next) {
+        next = make()
+        bucket.folders.set(seg, next)
+      }
+      bucket = next
+    }
+    bucket.canvases.push({ name: parts[parts.length - 1] ?? id, id })
+  }
+  const nodes = (bucket: Bucket): LibraryNode[] => {
+    const list: LibraryNode[] = [
+      ...[...bucket.folders.entries()].map(([name, child]) => ({
+        kind: 'folder' as const,
+        name,
+        children: nodes(child),
+      })),
+      ...bucket.canvases.map((canvas) => ({ kind: 'canvas' as const, ...canvas })),
+    ]
+    list.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    return list
+  }
+  return nodes(root)
+}
+
+function canvasRowHtml(name: string, id: string): string {
+  const safeName = escapeHtml(name)
+  const safeId = escapeHtml(id)
+  const href = `/canvas/${canvasPath(id)}`
+  return `<li class="canvas-row">
+  <div class="canvas-card-body">
+    <span class="canvas-id" title="${safeName}">${safeName}</span>
+    <span class="canvas-file">${safeName}.canvas.tsx</span>
+  </div>
+  <div class="canvas-actions">
+    <a class="btn btn-primary" href="${href}">Open</a>
+    <a class="btn" href="${href}/edit">Edit</a>
+    <button type="button" class="btn btn-subtle" data-copy-share="${safeId}">Copy link</button>
+    <span class="copy-feedback" data-copy-feedback aria-live="polite"></span>
+  </div>
+</li>`
+}
+
+function libraryNodesHtml(nodes: LibraryNode[]): string {
+  return nodes
+    .map((node) => {
+      if (node.kind === 'canvas') return canvasRowHtml(node.name, node.id)
+      const safe = escapeHtml(node.name)
+      return `<li><details><summary class="canvas-id">${safe}</summary><ul class="canvas-list">${libraryNodesHtml(node.children)}</ul></details></li>`
+    })
+    .join('')
 }
 
 /** Index: upload + library from stored canvas ids. */
@@ -1267,26 +1348,7 @@ export function indexShellHtml(canvasIds: string[]): string {
   const list =
     n === 0
       ? `<p class="status empty-state" data-shell="index">No canvases yet. Create one with New or upload a .canvas.tsx file.</p>`
-      : `<ul class="canvas-list" data-shell="index">${canvasIds
-          .map((id) => {
-            const safe = escapeHtml(id)
-            const href = `/canvas/${encodeURIComponent(id)}`
-            const editHref = `/canvas/${encodeURIComponent(id)}/edit`
-            const file = `${safe}.canvas.tsx`
-            return `<li class="canvas-row">
-  <div class="canvas-card-body">
-    <span class="canvas-id" title="${safe}">${safe}</span>
-    <span class="canvas-file">${file}</span>
-  </div>
-  <div class="canvas-actions">
-    <a class="btn btn-primary" href="${href}">Open</a>
-    <a class="btn" href="${editHref}">Edit</a>
-    <button type="button" class="btn btn-subtle" data-copy-share="${safe}">Copy link</button>
-    <span class="copy-feedback" data-copy-feedback aria-live="polite"></span>
-  </div>
-</li>`
-          })
-          .join('')}</ul>`
+      : `<ul class="canvas-list" data-shell="index">${libraryNodesHtml(libraryTree(canvasIds))}</ul>`
 
   const hero = `<header class="library-hero">
   <h1 class="library-title">Canvases</h1>
@@ -1335,9 +1397,10 @@ function previewStageHtml(
     payload.kind === 'ok' ? `<script>${payload.js}</script>` : ''
   const watch = `<script>
 (function () {
+  ${canvasPathJs}
   var id = ${JSON.stringify(canvasId)};
   try {
-    var es = new EventSource("/api/canvas/" + encodeURIComponent(id) + "/watch");
+    var es = new EventSource("/api/canvas/" + canvasPath(id) + "/watch");
     es.onmessage = function () {
       if (${skipReloadIfDirty ? 'window.__tcEditDirty' : 'false'}) return;
       location.reload();
