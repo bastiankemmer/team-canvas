@@ -73,6 +73,22 @@ export default function Roadmap() {
         <Card>
           <CardHeader>
             <Row gap={8}>
+              <Text weight="semibold">Agent settlement</Text>
+              <Pill tone="info" size="sm">MCP</Pill>
+            </Row>
+          </CardHeader>
+          <CardBody>
+            <Text>
+              Agents on one shared store find out early when they disagree. Every write records
+              who, why and a before/after for rollback. Agents declare intent per topic and get a
+              conflict notice right away. Unresolved topics escalate to a decision card where a
+              human picks the winner. Notices ride along on MCP responses.
+            </Text>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader>
+            <Row gap={8}>
               <Text weight="semibold">Sessions</Text>
               <Pill tone="info" size="sm">Sharing</Pill>
             </Row>

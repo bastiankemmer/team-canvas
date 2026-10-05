@@ -48,6 +48,15 @@ Planned:
 - More stores for the `CanvasStore` port: FTP and Samba, to load a canvas from a server, edit it and upload it back.
 - Realtime collaboration on the same canvas.
 - Agent collaboration: an agent leases a write lock on a canvas before it may write and releases it when done, so other agents can read a consistent canvas. HTTP and MCP tools to acquire, release and inspect the lease, with a timeout so a crashed agent cannot hold a canvas forever.
+- Agent settlement: when agents working on one shared store disagree, find out early and settle it, with a human as the final arbiter.
+  - **Identity**: write and lease tools take an `actor` (agent or chat id). team-canvas only records it. The agent setup (Cursor rule or hook) supplies it.
+  - **Change log**: an append-only log per canvas with `{ts, actor, tool, reason, before, after, topic?}`. It answers who changed what and why, and allows rollback. Entries tagged with a topic can be reverted together.
+  - **Intent**: `declare_intent({topic, canvas, plan})` creates a short-lived claim with a timeout, like a lease. If an open claim or settled decision on the same topic differs, the caller gets a conflict notice right away, before any work is written.
+  - **Topic thread**: stored in the canvas sidecar state. It holds positions (actor, choice, reason, one short message) and a status `open`, `escalated` or `settled`.
+  - **Negotiation**: agents update their positions for a bounded number of rounds. If they converge, the topic is settled. If not, it is escalated.
+  - **Human settlement**: an escalated topic shows as a decision card in the canvas UI with the competing positions. The human's pick becomes the settled decision, and the losing writes on that topic can be reverted in one step.
+  - **Delivery**: every MCP response carries a `notices[]` field for the caller (conflict, escalated, settled). There is no push: an agent sees a notice the next time it calls a tool. A blocking `await_messages` tool or Cursor hooks can be added later if that proves too slow.
+  - Not planned for v1: free-form agent chat, a judge agent, rejecting writes that contradict a settled decision (warn only).
 - Sessions: upload a canvas and invite collaborators, with MCP support for those sessions.
 - Open knowledge format: canvases instead of Markdown files as a knowledge base. Canvases link to each other, and agents can follow those links through MCP and HTTP to find information across linked canvases.
 - A connector for `useCanvasAction` (open agent, open file, new chat), which is a logged no-op today.
