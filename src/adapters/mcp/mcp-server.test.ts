@@ -467,7 +467,8 @@ describe("mcp stdio server", () => {
 
     expect(byName.list_canvases).toEqual({
       name: "list_canvases",
-      description: "List canvas ids in the store root",
+      description:
+        'List canvas ids in the store root. Ids are relative to the store root and may contain "/".',
       inputSchema: { type: "object", properties: {} },
     });
     expect(byName.create_canvas).toEqual({
@@ -936,10 +937,20 @@ describe("parseMcpArgs", () => {
     // The existing canvas was not touched.
     expect(await readFile(path.join(root, "fresh.canvas.tsx"), "utf8")).toBe(starter);
 
-    for (const bad of ["../x", "a/b", "", "-x", "a b"]) {
+    const nested = await callMcpTool(ops, "create_canvas", { id: "notes/demo" });
+    expect(nested.isError).toBeFalsy();
+    expect(JSON.parse(nested.content[0]!.text)).toEqual({ ok: true, id: "notes/demo" });
+    const nestedFile = await readFile(path.join(root, "notes", "demo.canvas.tsx"), "utf8");
+    expect(nestedFile).toContain("export default function NotesDemo()");
+
+    for (const bad of ["../x", "", "-x", "a b", "notes/edit", "notes/links"]) {
       const r = await callMcpTool(ops, "create_canvas", { id: bad });
       expect(r.isError, bad).toBe(true);
+      expect(r.content[0]!.text, bad).toMatch(/Invalid canvas id/);
     }
+    const flatEdit = await callMcpTool(ops, "create_canvas", { id: "edit" });
+    expect(flatEdit.isError).toBeFalsy();
+    expect(JSON.parse(flatEdit.content[0]!.text)).toEqual({ ok: true, id: "edit" });
     const noId = await callMcpTool(ops, "create_canvas", {});
     expect(noId.isError).toBe(true);
 
@@ -1061,7 +1072,7 @@ describe("parseMcpArgs", () => {
     expect(missing.isError).toBe(true);
     expect(missing.content[0]!.text).toBe(missingMessage);
 
-    for (const bad of ["", "..", "a/b", "a\\b"]) {
+    for (const bad of ["", "..", "a\\b"]) {
       let opsMessage = "";
       try {
         await ops.listLinks(bad);
@@ -1139,7 +1150,7 @@ describe("parseMcpArgs", () => {
     expect(missing.isError).toBe(true);
     expect(missing.content[0]!.text).toBe(missingMessage);
 
-    for (const bad of ["", "..", "a/b", "a\\b"]) {
+    for (const bad of ["", "..", "a\\b"]) {
       let opsMessage = "";
       try {
         await ops.backlinks(bad);
@@ -1261,5 +1272,41 @@ describe("parseMcpArgs", () => {
     });
     expect(missing.isError).toBe(true);
     expect(missing.content[0]!.text).toBe(missingMessage);
+  });
+
+  it('list_links and backlinks for guides/editing-workflow match ops, and list_canvases ids may contain /', async () => {
+    const desc = MCP_TOOL_DEFS.find((t) => t.name === "list_canvases")?.description ?? "";
+    expect(desc).toContain("relative to the store root");
+    expect(desc).toContain('may contain "/"');
+
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-folder-links-"));
+    const workflow = [
+      "export default function EditingWorkflow() {",
+      '  return <CanvasLink to="reference/mcp-tools">MCP tools</CanvasLink>',
+      "}",
+      "",
+    ].join("\n");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    await ops.writeSource("guides/editing-workflow", workflow);
+    await ops.writeSource(
+      "reference/mcp-tools",
+      "export default function McpTools() { return <div>needle</div> }\n",
+    );
+
+    const listed = await ops.listLinks("guides/editing-workflow");
+    expect(listed).toEqual([
+      { to: "reference/mcp-tools", line: 2, label: "MCP tools", exists: true },
+    ]);
+    const got = await callMcpTool(ops, "list_links", { id: "guides/editing-workflow" });
+    expect(got.isError).toBeFalsy();
+    expect(JSON.parse(got.content[0]!.text)).toEqual(listed);
+
+    const incoming = await ops.backlinks("reference/mcp-tools");
+    expect(incoming).toEqual([
+      { from: "guides/editing-workflow", line: 2, label: "MCP tools" },
+    ]);
+    const back = await callMcpTool(ops, "backlinks", { id: "reference/mcp-tools" });
+    expect(back.isError).toBeFalsy();
+    expect(JSON.parse(back.content[0]!.text)).toEqual(incoming);
   });
 });

@@ -49,9 +49,8 @@ describe("canvas edit ops", () => {
       "utf8",
     );
     await expect(ops.readSource("../escape")).rejects.toThrow(/Invalid canvas id/);
-    await expect(ops.writeSource("foo/bar", "x")).rejects.toThrow(
-      /Invalid canvas id/,
-    );
+    await ops.writeSource("foo/bar", "x");
+    expect(await readFile(path.join(root, "foo", "bar.canvas.tsx"), "utf8")).toBe("x");
     await expect(ops.searchSource("..\\win", "x")).rejects.toThrow(
       /Invalid canvas id/,
     );
@@ -83,10 +82,84 @@ describe("canvas edit ops", () => {
     expect(await ops.readSource("given")).toBe("export default () => null\n");
     expect((await ops.listCanvases()).sort()).toEqual(["2024", "given", "team-notes"]);
 
-    for (const bad of ["", "..", "../x", "a/b", "a\\b", "-x", "_x", "a b", "a.b"]) {
+    for (const bad of ["", "..", "../x", "a\\b", "-x", "_x", "a b", "a.b"]) {
       await expect(ops.createCanvas(bad), bad).rejects.toThrow(/Invalid canvas id/);
     }
     expect(await ops.listCanvases()).toHaveLength(3);
+  });
+
+  it('@task-2: createCanvas("notes/demo") writes notes/demo.canvas.tsx as NotesDemo with H1 notes/demo, and notes/edit is rejected', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-create-nested-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const reserved = [
+      "edit",
+      "source",
+      "state",
+      "watch",
+      "check",
+      "replace",
+      "search",
+      "search-linked",
+      "orientation",
+      "add-oriented",
+      "fill-slots",
+      "links",
+      "backlinks",
+    ];
+
+    expect(await ops.createCanvas("notes/demo")).toEqual({ ok: true, id: "notes/demo" });
+    const starter = await readFile(path.join(root, "notes", "demo.canvas.tsx"), "utf8");
+    expect(starter).toContain("export default function NotesDemo()");
+    expect(starter).toContain("<H1>notes/demo</H1>");
+    expect((await bundleCanvas({ source: starter })).ok).toBe(true);
+
+    expect(await ops.createCanvas("a/b")).toEqual({ ok: true, id: "a/b" });
+    expect(await readFile(path.join(root, "a", "b.canvas.tsx"), "utf8")).toContain(
+      "export default function AB()",
+    );
+
+    await expect(ops.createCanvas("notes/a.b")).rejects.toThrow(/Invalid canvas id/);
+
+    expect(await ops.createCanvas("notes/my-demo")).toEqual({
+      ok: true,
+      id: "notes/my-demo",
+    });
+    expect(await ops.readSource("notes/my-demo")).toContain(
+      "export default function NotesMyDemo()",
+    );
+
+    expect(await ops.createCanvas("2go")).toEqual({ ok: true, id: "2go" });
+    expect(await ops.readSource("2go")).toContain("export default function Canvas2go()");
+
+    expect(await ops.createCanvas("n2")).toEqual({ ok: true, id: "n2" });
+    const n2 = await ops.readSource("n2");
+    expect(n2).toContain("export default function N2()");
+    expect(n2).not.toContain("function CanvasN2()");
+
+    expect(await ops.createCanvas("9/go")).toEqual({ ok: true, id: "9/go" });
+    expect(await readFile(path.join(root, "9", "go.canvas.tsx"), "utf8")).toContain(
+      "export default function Canvas9Go()",
+    );
+
+    for (const bad of ["../x", "-x", "a b"]) {
+      await expect(ops.createCanvas(bad), bad).rejects.toThrow(/Invalid canvas id/);
+    }
+    for (const word of reserved) {
+      await expect(ops.createCanvas(`notes/${word}`), word).rejects.toThrow(
+        /Invalid canvas id/,
+      );
+      expect(await ops.createCanvas(word)).toEqual({ ok: true, id: word });
+    }
+
+    await ops.writeSource(
+      "notes/edit",
+      "export default function Hand() { return null }\n",
+    );
+    expect(await ops.listCanvases()).toContain("notes/edit");
+    await expect(ops.createCanvas("notes/edit")).rejects.toThrow(/Invalid canvas id/);
+
+    await expect(ops.createCanvas("notes/demo")).rejects.toThrow(/already exists/);
+    expect(await readFile(path.join(root, "notes", "demo.canvas.tsx"), "utf8")).toBe(starter);
   });
 
   it("replaceInSource: swaps exact text, leaves the rest byte-identical, refuses missing or ambiguous matches unless replace_all", async () => {
@@ -183,12 +256,12 @@ describe("canvas edit ops", () => {
     expect(await ops.listLinks("notes")).toEqual([]);
   });
 
-  it("@task-2: listLinks fails with ENOENT when the canvas file is missing and with Invalid canvas id for empty, .., slash, or backslash", async () => {
+  it("@task-2: listLinks fails with ENOENT when the canvas file is missing and with Invalid canvas id for empty, .., or backslash", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-links-err-"));
     const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
 
     await expect(ops.listLinks("notes")).rejects.toMatchObject({ code: "ENOENT" });
-    for (const bad of ["", "..", "a/b", "a\\b"]) {
+    for (const bad of ["", "..", "a\\b"]) {
       await expect(ops.listLinks(bad), bad).rejects.toThrow(/Invalid canvas id/);
     }
   });
@@ -372,12 +445,12 @@ describe("canvas edit ops", () => {
     expect(await ops.backlinks("b")).toEqual([]);
   });
 
-  it("@task-3: backlinks fails with ENOENT when the canvas file is missing and with Invalid canvas id for empty, .., slash, or backslash", async () => {
+  it("@task-3: backlinks fails with ENOENT when the canvas file is missing and with Invalid canvas id for empty, .., or backslash", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-backlinks-err-"));
     const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
 
     await expect(ops.backlinks("b")).rejects.toMatchObject({ code: "ENOENT" });
-    for (const bad of ["", "..", "a/b", "a\\b"]) {
+    for (const bad of ["", "..", "a\\b"]) {
       await expect(ops.backlinks(bad), bad).rejects.toThrow(/Invalid canvas id/);
     }
   });
@@ -617,5 +690,72 @@ describe("canvas edit ops", () => {
 
     failErr = "nope";
     await expect(ops.searchLinked("a", "needle")).rejects.toBe("nope");
+  });
+
+  it('@task-8: the link to is "reference/mcp-tools" and exists is true', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-folder-links-"));
+    const workflow = [
+      "export default function EditingWorkflow() {",
+      '  const id = "reference/mcp-tools";',
+      "  return (",
+      "    <div>",
+      '      <CanvasLink to="reference/mcp-tools">MCP tools</CanvasLink>',
+      '      <CanvasLink to="mcp-tools">Short</CanvasLink>',
+      '      <CanvasLink to="format">Format</CanvasLink>',
+      '      <CanvasLink to="">Empty</CanvasLink>',
+      '      <CanvasLink to="/abs">Abs</CanvasLink>',
+      "      <CanvasLink to={id}>Dyn</CanvasLink>",
+      "      <CanvasLink to={`reference/mcp-tools`}>Tpl</CanvasLink>",
+      '      <X to="reference/mcp-tools">Alias</X>',
+      '      {createElement(CanvasLink, { to: "reference/mcp-tools" }, "C")}',
+      '      <CanvasLink to="a\\b">Win</CanvasLink>',
+      '      <CanvasLink to="..">Up</CanvasLink>',
+      "    </div>",
+      "  );",
+      "}",
+      "",
+    ].join("\n");
+    const target = [
+      "export default function McpTools() {",
+      "  return (",
+      "    <div>",
+      "      needle",
+      '      <CanvasLink to="reference/elsewhere">Else</CanvasLink>',
+      "    </div>",
+      "  );",
+      "}",
+      "",
+    ].join("\n");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    await ops.writeSource("guides/editing-workflow", workflow);
+    await ops.writeSource("reference/mcp-tools", target);
+    await ops.writeSource(
+      "reference/elsewhere",
+      "export default function Elsewhere() { return <div>needle</div> }\n",
+    );
+    await ops.writeSource(
+      "spec/format",
+      "export default function SpecFormat() { return <div>format body</div> }\n",
+    );
+
+    expect(workflow.includes("needle")).toBe(false);
+    expect(await ops.listLinks("guides/editing-workflow")).toEqual([
+      { to: "reference/mcp-tools", line: 5, label: "MCP tools", exists: true },
+      { to: "mcp-tools", line: 6, label: "Short", exists: false },
+      { to: "format", line: 7, label: "Format", exists: false },
+    ]);
+
+    expect(await ops.backlinks("reference/mcp-tools")).toEqual([
+      { from: "guides/editing-workflow", line: 5, label: "MCP tools" },
+    ]);
+
+    const hits = await ops.searchLinked("guides/editing-workflow", "needle");
+    expect(hits).toEqual([
+      { id: "reference/mcp-tools", line: 4, snippet: "      needle" },
+    ]);
+
+    for (const bad of ["a\\b", ".."]) {
+      await expect(ops.listLinks(bad), bad).rejects.toThrow(/Invalid canvas id/);
+    }
   });
 });

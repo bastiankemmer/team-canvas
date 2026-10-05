@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
 import http from 'node:http'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Auth } from '../../ports/auth.js'
 import type { CanvasStore } from '../../ports/canvas-store.js'
 import {
@@ -111,6 +112,53 @@ describe('team-canvas serve', () => {
     await expect(
       startHttpServer({ root: missing, host: '127.0.0.1', port: 0 }),
     ).rejects.toThrow(/missing or unreadable/)
+  })
+
+  it('challenger: GET/PUT state and upload return 400 when a symlink leaves the store root', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-http-symlink-'))
+    const outside = await mkdtemp(path.join(tmpdir(), 'team-canvas-http-outside-'))
+    const hidden = 'hidden\n'
+    await writeFile(path.join(outside, 'hidden.canvas.tsx'), hidden, 'utf8')
+    await symlink(outside, path.join(root, 'linked'))
+    await symlink(
+      path.join(outside, 'hidden.canvas.tsx'),
+      path.join(root, 'hidden.canvas.tsx'),
+    )
+
+    const server = await startHttpServer({
+      root,
+      host: '127.0.0.1',
+      port: 0,
+    })
+    servers.push(server)
+
+    const getState = await fetch(`${server.url}/api/canvas/linked/hidden/state`)
+    expect(getState.status).toBe(400)
+    expect(await getState.text()).toMatch(/Invalid canvas id/)
+
+    const putState = await fetch(`${server.url}/api/canvas/linked/hidden/state`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ n: 1 }),
+    })
+    expect(putState.status).toBe(400)
+    expect(await putState.text()).toMatch(/Invalid canvas id/)
+
+    const upload = await fetch(`${server.url}/api/canvas`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'X-Canvas-Name': 'hidden.canvas.tsx',
+      },
+      body: 'export default function Pwn() { return null }\n',
+    })
+    expect(upload.status).toBe(400)
+    expect(await upload.text()).toMatch(/Invalid canvas id/)
+
+    expect(await readdir(outside)).toEqual(['hidden.canvas.tsx'])
+    expect(await readFile(path.join(outside, 'hidden.canvas.tsx'), 'utf8')).toBe(
+      hidden,
+    )
   })
 
   it('mutation: non-directory root fails with not-a-directory; ENOENT vs other state errors', async () => {
@@ -671,7 +719,14 @@ export default function Solo() {
     expect(await dup.text()).toMatch(/already exists/)
     expect(await store.readSource('my-canvas')).toBe(starter)
 
-    for (const bad of ['../x', 'a/b', '', '-x', 'a b']) {
+    const nested = await post(JSON.stringify({ id: 'notes/demo' }))
+    expect(nested.status).toBe(201)
+    expect(await nested.json()).toEqual({ ok: true, id: 'notes/demo' })
+    const nestedAgain = await post(JSON.stringify({ id: 'notes/demo' }))
+    expect(nestedAgain.status).toBe(409)
+    expect(await nestedAgain.text()).toMatch(/already exists/)
+
+    for (const bad of ['../x', '', '-x', 'a b', 'notes/edit', 'notes/links']) {
       expect((await post(JSON.stringify({ id: bad }))).status, bad).toBe(400)
     }
     expect((await post('not json')).status).toBe(400)
@@ -990,6 +1045,395 @@ export default function Solo() {
     const missing = await fetch(`${server.url}/api/canvas/absent/search-linked?q=needle`)
     expect(missing.status).toBe(404)
     expect(await missing.text()).toBe('Not found')
+  })
+
+  it('@task-3: the viewer renders notes/demo', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-http-slash-'))
+    await mkdir(path.join(root, 'notes'))
+    await mkdir(path.join(root, 'a'))
+    const notesDemo =
+      'export default function NotesDemo() { return <div>notes-demo-marker</div> }\n'
+    const flatDemo =
+      'export default function Demo() { return <div>flat-demo-marker</div> }\n'
+    const flatEdit =
+      'export default function FlatEdit() { return <div>flat-edit-marker</div> }\n'
+    const foo =
+      'export default function Foo() { return <div>foo-marker</div> }\n'
+    await writeFile(path.join(root, 'notes', 'demo.canvas.tsx'), notesDemo, 'utf8')
+    await writeFile(path.join(root, 'demo.canvas.tsx'), flatDemo, 'utf8')
+    await writeFile(path.join(root, 'edit.canvas.tsx'), flatEdit, 'utf8')
+    await writeFile(path.join(root, 'foo.canvas.tsx'), foo, 'utf8')
+    await writeFile(
+      path.join(root, 'notes.canvas.tsx'),
+      'export default function Notes() { return <CanvasLink to="alpha">A</CanvasLink> }\n',
+      'utf8',
+    )
+    await writeFile(
+      path.join(root, 'notes', 'links.canvas.tsx'),
+      'export default function NotesLinks() { return <CanvasLink to="beta">B</CanvasLink> }\n',
+      'utf8',
+    )
+    await writeFile(
+      path.join(root, 'a', 'b.canvas.tsx'),
+      'export default function Decoy() { return <div>should-not-open-folder</div> }\n',
+      'utf8',
+    )
+
+    const server = await startHttpServer({
+      root,
+      host: '127.0.0.1',
+      port: 0,
+    })
+    servers.push(server)
+    const store = LocalFilesystemCanvasStore(root)
+    const ops = createCanvasEditOps(store)
+
+    const viewer = await fetch(`${server.url}/canvas/notes/demo`)
+    expect(viewer.status).toBe(200)
+    const viewerHtml = await viewer.text()
+    expect(viewerHtml).toContain('data-shell="viewer"')
+    expect(viewerHtml).toContain('data-canvas-id="notes/demo"')
+    expect(viewerHtml).toContain('notes-demo-marker')
+
+    const nestedEdit = await fetch(`${server.url}/canvas/notes/demo/edit`)
+    expect(nestedEdit.status).toBe(200)
+    const nestedEditHtml = await nestedEdit.text()
+    expect(nestedEditHtml).toContain('data-shell="edit"')
+    expect(nestedEditHtml).toContain('data-canvas-id="notes/demo"')
+    expect(nestedEditHtml).toContain('notes-demo-marker')
+
+    const flat = await fetch(`${server.url}/canvas/demo`)
+    expect(flat.status).toBe(200)
+    const flatHtml = await flat.text()
+    expect(flatHtml).toContain('data-shell="viewer"')
+    expect(flatHtml).toContain('data-canvas-id="demo"')
+    expect(flatHtml).toContain('flat-demo-marker')
+
+    const editId = await fetch(`${server.url}/canvas/edit`)
+    expect(editId.status).toBe(200)
+    const editIdHtml = await editId.text()
+    expect(editIdHtml).toContain('data-shell="viewer"')
+    expect(editIdHtml).toContain('data-canvas-id="edit"')
+    expect(editIdHtml).toContain('flat-edit-marker')
+    expect(editIdHtml).not.toContain('data-shell="edit"')
+
+    const fooEdit = await fetch(`${server.url}/canvas/foo/edit`)
+    expect(fooEdit.status).toBe(200)
+    const fooEditHtml = await fooEdit.text()
+    expect(fooEditHtml).toContain('data-shell="edit"')
+    expect(fooEditHtml).toContain('data-canvas-id="foo"')
+    expect(fooEditHtml).toContain('foo-marker')
+    expect(fooEditHtml).not.toContain('flat-edit-marker')
+
+    const source = await fetch(`${server.url}/api/canvas/notes/demo/source`)
+    expect(source.status).toBe(200)
+    expect(await source.text()).toBe(notesDemo)
+
+    const putState = await fetch(`${server.url}/api/canvas/notes/demo/state`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nested: true }),
+    })
+    expect(putState.status).toBe(204)
+    expect(await store.readState('notes/demo')).toEqual({ nested: true })
+
+    const links = await fetch(`${server.url}/api/canvas/notes/links`)
+    expect(links.status).toBe(200)
+    expect(await links.json()).toEqual(await ops.listLinks('notes'))
+    expect(await ops.listLinks('notes/links')).not.toEqual(
+      await ops.listLinks('notes'),
+    )
+
+    const rawGet = (reqPath: string) =>
+      new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const u = new URL(server.url)
+        const req = http.request(
+          {
+            hostname: u.hostname,
+            port: u.port,
+            path: reqPath,
+            method: 'GET',
+          },
+          (res) => {
+            const chunks: Buffer[] = []
+            res.on('data', (c: Buffer) => chunks.push(c))
+            res.on('end', () =>
+              resolve({
+                status: res.statusCode ?? 0,
+                body: Buffer.concat(chunks).toString('utf8'),
+              }),
+            )
+          },
+        )
+        req.on('error', reject)
+        req.end()
+      })
+
+    for (const reqPath of [
+      '/api/canvas/bad%2Fid/source',
+      '/api/canvas/a%2Fb/source',
+      '/api/canvas/a%2fb/source',
+      '/api/canvas/a%5Cb/source',
+      '/api/canvas/a%5cb/source',
+    ]) {
+      const bad = await rawGet(reqPath)
+      expect(bad.status, reqPath).toBe(400)
+      expect(bad.body, reqPath).toMatch(/Invalid canvas id/)
+      expect(bad.body, reqPath).not.toContain('should-not-open-folder')
+    }
+
+    const dotdot = await rawGet('/api/canvas/%2E%2E/source')
+    expect(dotdot.status).toBe(400)
+    expect(dotdot.body).toMatch(/Invalid canvas id/)
+
+    const doubleEncoded = await rawGet('/api/canvas/notes%252Fdemo/source')
+    expect(doubleEncoded.status).toBe(404)
+    expect(doubleEncoded.body).toBe('Not found')
+
+    const missingId = await fetch(`${server.url}/api/canvas/source`)
+    expect(missingId.status).toBe(404)
+    expect(await missingId.text()).toBe('Not found')
+
+    const slashedName = await fetch(`${server.url}/api/canvas`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'X-Canvas-Name': 'notes/demo.canvas.tsx',
+      },
+      body: 'export default function X() { return null }\n',
+    })
+    expect(slashedName.status).toBe(400)
+    expect(await slashedName.text()).toMatch(/no path separators/)
+
+    const uploaded = await fetch(`${server.url}/api/canvas`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'X-Canvas-Name': 'demo.canvas.tsx',
+      },
+      body: 'export default function DemoUpload() { return <div>uploaded-demo</div> }\n',
+    })
+    expect(uploaded.status).toBe(201)
+    expect(await uploaded.json()).toEqual({ id: 'demo' })
+    expect(await store.readSource('demo')).toContain('uploaded-demo')
+    expect(
+      await store.list(),
+    ).toEqual(expect.arrayContaining(['demo', 'notes/demo']))
+  })
+
+  it('GET /api/canvas/guides/editing-workflow/links returns the cross-folder link and backlinks agree', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-http-folder-links-'))
+    const workflow = [
+      'export default function EditingWorkflow() {',
+      '  return <CanvasLink to="reference/mcp-tools">MCP tools</CanvasLink>',
+      '}',
+      '',
+    ].join('\n')
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root))
+    await ops.writeSource('guides/editing-workflow', workflow)
+    await ops.writeSource(
+      'reference/mcp-tools',
+      'export default function McpTools() { return <div>needle</div> }\n',
+    )
+    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    servers.push(server)
+
+    const listed = await ops.listLinks('guides/editing-workflow')
+    expect(listed).toEqual([
+      { to: 'reference/mcp-tools', line: 2, label: 'MCP tools', exists: true },
+    ])
+    const got = await fetch(`${server.url}/api/canvas/guides/editing-workflow/links`)
+    expect(got.status).toBe(200)
+    expect(got.headers.get('content-type')).toMatch(/application\/json/)
+    expect(await got.json()).toEqual(listed)
+
+    const incoming = await ops.backlinks('reference/mcp-tools')
+    expect(incoming).toEqual([
+      { from: 'guides/editing-workflow', line: 2, label: 'MCP tools' },
+    ])
+    const back = await fetch(`${server.url}/api/canvas/reference/mcp-tools/backlinks`)
+    expect(back.status).toBe(200)
+    expect(await back.json()).toEqual(incoming)
+  })
+
+  it('mutation: /canvas/:id/edit is the editor, flat /canvas/edit is the viewer, and kinds are not interchangeable', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-route-kind-'))
+    await mkdir(path.join(root, 'notes'), { recursive: true })
+    const page = (name: string, marker: string) =>
+      `export default function ${name}() { return <div>${marker}</div> }\n`
+    await writeFile(path.join(root, 'foo.canvas.tsx'), page('Foo', 'foo-marker'), 'utf8')
+    await writeFile(path.join(root, 'edit.canvas.tsx'), page('FlatEdit', 'flat-edit-marker'), 'utf8')
+    await writeFile(
+      path.join(root, 'notes', 'demo.canvas.tsx'),
+      page('NotesDemo', 'nested-marker'),
+      'utf8',
+    )
+    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    servers.push(server)
+
+    const edit = await fetch(`${server.url}/canvas/foo/edit`)
+    expect(edit.status).toBe(200)
+    const editHtml = await edit.text()
+    expect(editHtml).toContain('data-shell="edit"')
+    expect(editHtml).toContain('data-edit-chrome')
+    expect(editHtml).toContain('data-canvas-id="foo"')
+    expect(editHtml).toContain('foo-marker')
+
+    const flat = await fetch(`${server.url}/canvas/edit`)
+    expect(flat.status).toBe(200)
+    const flatHtml = await flat.text()
+    expect(flatHtml).toContain('data-shell="viewer"')
+    expect(flatHtml).toContain('data-canvas-id="edit"')
+    expect(flatHtml).toContain('flat-edit-marker')
+    expect(flatHtml).not.toContain('data-edit-chrome')
+
+    const nested = await fetch(`${server.url}/canvas/notes/demo`)
+    expect(nested.status).toBe(200)
+    const nestedHtml = await nested.text()
+    expect(nestedHtml).toContain('data-shell="viewer"')
+    expect(nestedHtml).toContain('data-canvas-id="notes/demo"')
+    expect(nestedHtml).toContain('nested-marker')
+    expect(nestedHtml).not.toContain('data-edit-chrome')
+
+    const viewer = await fetch(`${server.url}/canvas/foo`)
+    expect(viewer.status).toBe(200)
+    expect(viewer.headers.get('content-type')).toMatch(/text\/html/)
+    expect(await viewer.text()).toContain('data-shell="viewer"')
+
+    const asState = await fetch(`${server.url}/canvas/foo/state`)
+    expect(asState.status).toBe(404)
+    expect(asState.headers.get('content-type')).toMatch(/text\/html/)
+    expect(await asState.text()).toContain('data-shell="not-found"')
+
+    const asWatch = await fetch(`${server.url}/canvas/foo/watch`)
+    expect(asWatch.status).toBe(404)
+    expect(asWatch.headers.get('content-type')).toMatch(/text\/html/)
+
+    const apiEdit = await fetch(`${server.url}/api/canvas/foo/edit`)
+    expect(apiEdit.status).toBe(404)
+    expect(apiEdit.headers.get('content-type')).toMatch(/text\/plain/)
+    expect(await apiEdit.text()).toBe('Not found')
+
+    const watch = await fetch(`${server.url}/api/canvas/foo/watch`)
+    expect(watch.status).toBe(200)
+    expect(watch.headers.get('content-type')).toMatch(/text\/event-stream/)
+    await watch.body?.cancel().catch(() => undefined)
+
+    const slash = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = http.request(
+        { host: '127.0.0.1', port: server.port, path: '/canvas//edit', method: 'GET' },
+        (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (chunk: Buffer) => chunks.push(chunk))
+          res.on('end', () =>
+            resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }),
+          )
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(slash.status).toBe(400)
+    expect(slash.body).toContain('/edit')
+
+    const put = await fetch(`${server.url}/api/canvas/foo/state`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ n: 1 }),
+    })
+    expect(put.status).toBe(204)
+    const got = await fetch(`${server.url}/api/canvas/foo/state`)
+    expect(got.status).toBe(200)
+    expect(got.headers.get('content-type')).toMatch(/application\/json/)
+    expect(await got.json()).toEqual({ n: 1 })
+
+    const badGet = await fetch(`${server.url}/api/canvas/foo..bar/state`)
+    expect(badGet.status).toBe(400)
+    expect(await badGet.text()).toMatch(/Invalid canvas id/)
+    const badPut = await fetch(`${server.url}/api/canvas/foo..bar/state`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ n: 2 }),
+    })
+    expect(badPut.status).toBe(400)
+    expect(await badPut.text()).toMatch(/Invalid canvas id/)
+    expect(await (await fetch(`${server.url}/api/canvas/foo/state`)).json()).toEqual({ n: 1 })
+  })
+
+  it('mutation: a non-string watch filename does not notify; a .canvas.tsx filename does', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-watch-name-'))
+    await mkdir(path.join(root, 'notes'), { recursive: true })
+    await writeFile(
+      path.join(root, 'foo.canvas.tsx'),
+      'export default function Foo() { return null }\n',
+      'utf8',
+    )
+    await writeFile(
+      path.join(root, 'notes', 'demo.canvas.tsx'),
+      'export default function NotesDemo() { return null }\n',
+      'utf8',
+    )
+    let listener: ((event: string, filename?: string | Buffer | null) => void) | undefined
+    const watchSpy = vi.spyOn(fs, 'watch').mockImplementation(((
+      _file: fs.PathLike,
+      _opts: { recursive?: boolean; persistent?: boolean },
+      cb: (event: string, filename?: string | Buffer | null) => void,
+    ) => {
+      listener = cb
+      return { close() {} } as fs.FSWatcher
+    }) as typeof fs.watch)
+    try {
+      const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+      servers.push(server)
+
+      const open = async (id: string) => {
+        const res = await fetch(`${server.url}/api/canvas/${id}/watch`)
+        expect(res.status).toBe(200)
+        const reader = res.body!.getReader()
+        const dec = new TextDecoder()
+        let buf = ''
+        let closed = false
+        const pump = (async () => {
+          while (!closed) {
+            const { done, value } = await reader.read()
+            if (done) break
+            if (value) buf += dec.decode(value)
+          }
+        })()
+        const saw = async (ms: number) => {
+          const deadline = Date.now() + ms
+          while (!/data:\s*rebuild/.test(buf) && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 20))
+          }
+          return /data:\s*rebuild/.test(buf)
+        }
+        return {
+          saw,
+          async stop() {
+            closed = true
+            await reader.cancel().catch(() => undefined)
+            await pump.catch(() => undefined)
+          },
+        }
+      }
+
+      const foo = await open('foo')
+      expect(listener).toBeTypeOf('function')
+      listener!('rename', undefined)
+      expect(await foo.saw(300)).toBe(false)
+      listener!('change', 'foo.canvas.data.json')
+      expect(await foo.saw(300)).toBe(false)
+      listener!('change', 'foo.canvas.tsx')
+      expect(await foo.saw(1000)).toBe(true)
+      await foo.stop()
+
+      const nested = await open('notes/demo')
+      listener!('change', 'notes\\demo.canvas.tsx')
+      expect(await nested.saw(1000)).toBe(true)
+      await nested.stop()
+    } finally {
+      watchSpy.mockRestore()
+    }
   })
 })
 

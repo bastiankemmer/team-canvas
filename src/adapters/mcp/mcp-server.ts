@@ -22,7 +22,8 @@ export type McpToolDef = {
 export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "list_canvases",
-    description: "List canvas ids in the store root",
+    description:
+      'List canvas ids in the store root. Ids are relative to the store root and may contain "/".',
     inputSchema: { type: "object", properties: {} },
   },
   {
