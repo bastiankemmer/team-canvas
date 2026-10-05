@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -174,6 +174,101 @@ export default function Hello() {
       ])
       if (chunk.value) {
         buf2 += dec2.decode(chunk.value)
+        saw2 = /data:\s*rebuild/.test(buf2)
+      }
+    }
+    await reader2.cancel().catch(() => undefined)
+    expect(saw2).toBe(false)
+  }, 20_000)
+
+  it('@task-4: client receives data: rebuild and GET /canvas/sub/nested contains the new text', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-t4-'))
+    const server = await startHttpServer({
+      root,
+      host: '127.0.0.1',
+      port: 0,
+    })
+    servers.push(server)
+
+    const watchRes = await fetch(`${server.url}/api/canvas/sub/nested/watch`)
+    expect(watchRes.status).toBe(200)
+    expect(watchRes.headers.get('content-type')).toMatch(/text\/event-stream/)
+
+    const reader = watchRes.body!.getReader()
+    const dec = new TextDecoder()
+    let buf = ''
+    const first = await reader.read()
+    if (first.value) buf += dec.decode(first.value)
+
+    const marker = 'task4-nested-marker'
+    await mkdir(path.join(root, 'sub'))
+    await writeFile(
+      path.join(root, 'sub', 'nested.canvas.tsx'),
+      `export default function Nested() { return <div>${marker}</div> }\n`,
+      'utf8',
+    )
+
+    const deadline = Date.now() + 5000
+    let sawRebuild = /data:\s*rebuild/.test(buf)
+    while (!sawRebuild && Date.now() < deadline) {
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<{ done: false; value: undefined }>((r) =>
+          setTimeout(() => r({ done: false, value: undefined }), 200),
+        ),
+      ])
+      if (chunk.value) {
+        buf += dec.decode(chunk.value)
+        sawRebuild = /data:\s*rebuild/.test(buf)
+      }
+    }
+    await reader.cancel().catch(() => undefined)
+    expect(sawRebuild).toBe(true)
+
+    const viewer = await fetch(`${server.url}/canvas/sub/nested`)
+    expect(viewer.status).toBe(200)
+    expect(await viewer.text()).toContain(marker)
+
+    const watch2 = await fetch(`${server.url}/api/canvas/sub/nested/watch`)
+    const reader2 = watch2.body!.getReader()
+    const dec2 = new TextDecoder()
+    let pending = reader2.read()
+    const readFor = async (ms: number): Promise<Uint8Array | undefined> => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const timeout = new Promise<{ timeout: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timeout: true }), ms)
+      })
+      const result = await Promise.race([
+        pending.then((chunk) => ({ timeout: false as const, chunk })),
+        timeout,
+      ])
+      clearTimeout(timer)
+      if (result.timeout) return undefined
+      pending = reader2.read()
+      return result.chunk.value
+    }
+    // A late fs.watch echo of the canvas write can arrive on this new stream.
+    const drainDeadline = Date.now() + 400
+    while (Date.now() < drainDeadline) await readFor(50)
+
+    let buf2 = ''
+    await writeFile(
+      path.join(root, 'sub', 'nested.canvas.data.json'),
+      JSON.stringify({ n: 1 }),
+      'utf8',
+    )
+    await writeFile(path.join(root, 'sub', 'side.txt'), 'not a canvas', 'utf8')
+    await writeFile(
+      path.join(root, 'foo..bar.canvas.tsx'),
+      'export default function Unsafe() { return null }\n',
+      'utf8',
+    )
+    const deadline2 = Date.now() + 1500
+    let saw2 = false
+    while (!saw2 && Date.now() < deadline2) {
+      const value = await readFor(200)
+      if (value) {
+        buf2 += dec2.decode(value)
         saw2 = /data:\s*rebuild/.test(buf2)
       }
     }

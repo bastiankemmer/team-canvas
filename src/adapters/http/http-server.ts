@@ -150,6 +150,74 @@ export function parseCanvasUploadName(
   return { ok: true, id }
 }
 
+const API_CANVAS_ACTIONS = new Set([
+  'state',
+  'watch',
+  'source',
+  'check',
+  'replace',
+  'search',
+  'search-linked',
+  'orientation',
+  'add-oriented',
+  'fill-slots',
+  'links',
+  'backlinks',
+])
+
+type CanvasRoute =
+  | { kind: 'api'; rawId: string; action: string }
+  | { kind: 'edit'; rawId: string }
+  | { kind: 'view'; rawId: string }
+
+/** Editor and each API action before the viewer. Id is the path before that action. */
+function matchCanvasRoute(pathName: string): CanvasRoute | null {
+  const path = pathName.replace(/\/$/, '')
+  if (path.startsWith('/api/canvas/')) {
+    const rest = path.slice('/api/canvas/'.length)
+    const cut = rest.lastIndexOf('/')
+    // No segment before the action: missing id, not a canvas route.
+    if (cut <= 0) return null
+    const action = rest.slice(cut + 1)
+    if (!API_CANVAS_ACTIONS.has(action)) return null
+    return { kind: 'api', rawId: rest.slice(0, cut), action }
+  }
+  if (path.startsWith('/canvas/')) {
+    const rest = path.slice('/canvas/'.length)
+    const cut = rest.lastIndexOf('/')
+    // `/canvas/edit` is the viewer for the flat id `edit`.
+    if (cut > 0 && rest.slice(cut + 1) === 'edit') {
+      return { kind: 'edit', rawId: rest.slice(0, cut) }
+    }
+    return { kind: 'view', rawId: rest }
+  }
+  return null
+}
+
+/** One decode. `%2F` / `%5C` in the raw id stay a 400, not a folder separator. */
+function resolveCanvasRouteId(
+  rawId: string,
+): { ok: true; id: string } | { ok: false; message: string } {
+  if (/%(?:2[Ff]|5[Cc])/.test(rawId)) {
+    return { ok: false, message: `Invalid canvas id "${rawId}"` }
+  }
+  let id: string
+  try {
+    id = decodeURIComponent(rawId)
+  } catch {
+    return { ok: false, message: 'Invalid canvas id' }
+  }
+  try {
+    assertSafeCanvasId(id)
+  } catch (err) {
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : 'Invalid canvas id',
+    }
+  }
+  return { ok: true, id }
+}
+
 type WatchClient = { res: http.ServerResponse; id: string }
 
 export async function startHttpServer(
@@ -186,8 +254,14 @@ export async function startHttpServer(
 
   // Reload viewer only when canvas source changes — not on sidecar writes (useCanvasState persist).
   const invalidate = (filename: string) => {
-    if (!filename.endsWith(CANVAS_UPLOAD_SUFFIX)) return
-    const id = filename.slice(0, -CANVAS_UPLOAD_SUFFIX.length)
+    const normalized = filename.replace(/\\/g, '/')
+    if (!normalized.endsWith(CANVAS_UPLOAD_SUFFIX)) return
+    const id = normalized.slice(0, -CANVAS_UPLOAD_SUFFIX.length)
+    try {
+      assertSafeCanvasId(id)
+    } catch {
+      return
+    }
     bundleCache.delete(id)
     notify(id)
   }
@@ -211,7 +285,7 @@ export async function startHttpServer(
   await assertReadableRoot(root)
 
   let watcher: fs.FSWatcher | undefined
-  watcher = fs.watch(root, { persistent: false }, (_event, filename) => {
+  watcher = fs.watch(root, { recursive: true, persistent: false }, (_event, filename) => {
     if (typeof filename === 'string') invalidate(filename)
   })
 
@@ -316,7 +390,9 @@ export async function startHttpServer(
             const msg =
               err instanceof Error ? err.message : 'Failed to write canvas source'
             console.error(`[team-canvas] writeSource ${parsed.id}:`, msg)
-            res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+            res.writeHead(isInvalidCanvasId(err) ? 400 : 500, {
+              'content-type': 'text/plain; charset=utf-8',
+            })
             res.end(msg)
             return
           }
@@ -371,9 +447,19 @@ export async function startHttpServer(
           return
         }
 
-        const stateMatch = /^\/api\/canvas\/([^/]+)\/state\/?$/.exec(pathName)
-        if (stateMatch) {
-          const id = decodeURIComponent(stateMatch[1]!)
+        const canvasRoute = matchCanvasRoute(pathName)
+        const routedId = canvasRoute
+          ? resolveCanvasRouteId(canvasRoute.rawId)
+          : null
+        if (routedId && !routedId.ok) {
+          res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+          res.end(routedId.message)
+          return
+        }
+        const routeId = routedId && routedId.ok ? routedId.id : ''
+
+        if (canvasRoute?.kind === 'api' && canvasRoute.action === 'state') {
+          const id = routeId
           if (method === 'GET') {
             try {
               const state = await loadCanvasState(store, id)
@@ -385,7 +471,9 @@ export async function startHttpServer(
               const msg =
                 err instanceof Error ? err.message : 'Failed to read canvas state'
               console.error(`[team-canvas] readState ${id}:`, msg)
-              res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+              res.writeHead(isInvalidCanvasId(err) ? 400 : 500, {
+                'content-type': 'text/plain; charset=utf-8',
+              })
               res.end(msg)
             }
             return
@@ -416,7 +504,9 @@ export async function startHttpServer(
               const msg =
                 err instanceof Error ? err.message : 'Failed to write canvas state'
               console.error(`[team-canvas] writeState ${id}:`, msg)
-              res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+              res.writeHead(isInvalidCanvasId(err) ? 400 : 500, {
+                'content-type': 'text/plain; charset=utf-8',
+              })
               res.end(msg)
               return
             }
@@ -429,9 +519,8 @@ export async function startHttpServer(
           return
         }
 
-        const watchMatch = /^\/api\/canvas\/([^/]+)\/watch\/?$/.exec(pathName)
-        if (watchMatch) {
-          const id = decodeURIComponent(watchMatch[1]!)
+        if (canvasRoute?.kind === 'api' && canvasRoute.action === 'watch') {
+          const id = routeId
           res.writeHead(200, {
             'content-type': 'text/event-stream; charset=utf-8',
             'cache-control': 'no-cache',
@@ -445,13 +534,13 @@ export async function startHttpServer(
         }
 
         // Shared edit ops (thin JSON/text over createCanvasEditOps).
-        const editMatch =
-          /^\/api\/canvas\/([^/]+)\/(source|check|replace|search|search-linked|orientation|add-oriented|fill-slots|links|backlinks)\/?$/.exec(
-            pathName,
-          )
-        if (editMatch) {
-          const id = decodeURIComponent(editMatch[1]!)
-          const action = editMatch[2]!
+        if (
+          canvasRoute?.kind === 'api' &&
+          canvasRoute.action !== 'state' &&
+          canvasRoute.action !== 'watch'
+        ) {
+          const id = routeId
+          const action = canvasRoute.action
           const replyOpsError = (err: unknown, fallback: string) => {
             if (isMissingState(err)) {
               res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
@@ -674,23 +763,13 @@ export async function startHttpServer(
           return
         }
 
-        const editPage = /^\/canvas\/([^/]+)\/edit\/?$/.exec(pathName)
-        if (editPage) {
-          await writeCanvasShell(
-            res,
-            decodeURIComponent(editPage[1]!),
-            editShellHtml,
-          )
+        if (canvasRoute?.kind === 'edit') {
+          await writeCanvasShell(res, routeId, editShellHtml)
           return
         }
 
-        const viewer = /^\/canvas\/([^/]+)\/?$/.exec(pathName)
-        if (viewer) {
-          await writeCanvasShell(
-            res,
-            decodeURIComponent(viewer[1]!),
-            viewerShellHtml,
-          )
+        if (canvasRoute?.kind === 'view') {
+          await writeCanvasShell(res, routeId, viewerShellHtml)
           return
         }
 
