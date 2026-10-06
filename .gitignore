@@ -11,6 +11,7 @@ reports/
 # local pipeline artifacts (plans, reports); not part of the project
 docs/plans/
 docs/reports/
+docs/reviews/
 
 # state the server writes next to canvases
 *.canvas.data.json

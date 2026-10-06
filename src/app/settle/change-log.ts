@@ -120,7 +120,15 @@ export function createRollback(
     const snapshot = await store.readState(snapshotId(entry.before)).catch(() => null);
     const source = isRecord(snapshot) ? snapshot.source : undefined;
     if (typeof source !== "string") return "snapshot of the old content is missing";
-    await store.writeSource(entry.canvas, source);
+    // The doc `revert` already read can miss a lease taken since. Re-check under
+    // the settlement lock and hold that lock through the restore write.
+    const blocked = await docs.mutate(async (fresh) => {
+      const lease = liveLease(fresh, entry.canvas, now());
+      if (lease && lease.actor !== by) return `"${entry.canvas}" is leased by ${lease.actor}`;
+      await store.writeSource(entry.canvas, source);
+      return null;
+    });
+    if (blocked !== null) return blocked;
     await record(
       { canvas: entry.canvas, tool: "revert", before: current, after: source },
       { actor: by, reason: `revert #${entry.n}` },

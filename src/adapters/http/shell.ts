@@ -768,10 +768,24 @@ export function settlementShellHtml(topics: TopicView[]): string {
 document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-settle]'); if (!b) return;
   var card = b.closest('[data-topic]');
+  var revert = card.querySelector('[data-revert]').checked;
+  var status = document.querySelector('[data-settle-status]');
   fetch('/api/settlement/topics/' + encodeURIComponent(card.dataset.topic) + '/settle', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ plan: b.dataset.plan, revert: card.querySelector('[data-revert]').checked })
-  }).then(function (r) { return r.ok ? location.reload() : r.text().then(function (m) { document.querySelector('[data-settle-status]').textContent = m; }); });
+    body: JSON.stringify({ plan: b.dataset.plan, revert: revert })
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function (m) { status.textContent = m; });
+    return r.json().then(function (body) {
+      var skipped = body && body.skipped;
+      if (revert && skipped && skipped.length) {
+        status.textContent = skipped.map(function (s) {
+          return 'skipped #' + s.n + (s.reason ? ': ' + s.reason : '');
+        }).join('; ');
+        return;
+      }
+      location.reload();
+    });
+  });
 });
 </script>`
   return page('Decisions', body, '', script, '')

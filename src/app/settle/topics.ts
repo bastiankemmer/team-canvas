@@ -244,6 +244,25 @@ export function escalate(doc: Doc, actorIn: unknown, topicIn: unknown, at: numbe
 }
 
 /**
+ * What `POST /revert` with a topic rolls back, from the whole log (not the capped
+ * change list). Once a decision exists, only losers — the same set `decide` returns.
+ * An open topic has no decision, so every non-revert entry for it is undone.
+ */
+export function entriesToRevert(doc: Doc, topic: string): number[] {
+  const t = own(doc.topics, topic);
+  const plan = t?.decision?.plan;
+  if (plan !== undefined && t) {
+    return doc.log
+      .filter((e) => {
+        const p = e.topic === topic && !e.reverted ? own(t.positions, e.actor) : undefined;
+        return p !== undefined && p.plan !== plan;
+      })
+      .map((e) => e.n);
+  }
+  return doc.log.filter((e) => e.topic === topic && !e.reverted && e.tool !== "revert").map((e) => e.n);
+}
+
+/**
  * A human decides. Returns the logged writes under this topic by actors whose plan
  * differs from the decision, which the caller may roll back.
  */
@@ -263,13 +282,7 @@ export function decide(
   t.status = "settled";
   t.decision = decision;
   notify(doc, Object.keys(t.positions), undefined, "settled", topic, `${by} settled "${topic}": ${plan}`, at);
-  const losers = doc.log
-    .filter((e) => {
-      const p = e.topic === topic && !e.reverted ? own(t.positions, e.actor) : undefined;
-      return p !== undefined && p.plan !== plan;
-    })
-    .map((e) => e.n);
-  return { decision, losers };
+  return { decision, losers: entriesToRevert(doc, topic) };
 }
 
 /** The writer's plan lost to the decision: say their write may be reverted. */

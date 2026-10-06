@@ -289,17 +289,16 @@ export function applySlotFills(
   if (ids.length === 0) {
     throw new Error("fillSlots requires at least one slot");
   }
-  let out = source;
   for (const id of ids) {
     if (!knownIds.has(id)) {
       throw new Error(`Unknown or expired slot id "${id}"`);
     }
-    const token = `__tc_slot_${id}__`;
-    if (!out.includes(token)) {
+    if (!source.includes(`__tc_slot_${id}__`)) {
       throw new Error(`Unknown or expired slot id "${id}"`);
     }
-    // ponytail: raw replace; metachar-heavy values use writeSource
-    out = out.replaceAll(token, slots[id]!);
   }
-  return out;
+  // One pass over the original text; inserted values are not scanned.
+  return source.replaceAll(SLOT_TOKEN, (token, id: string) =>
+    Object.hasOwn(slots, id) ? slots[id]! : token,
+  );
 }

@@ -35,7 +35,10 @@ function decodeJsxEntities(value: string): string {
       if (named) return JSX_NAMED[named]!;
       const hex = num![0] === "x" || num![0] === "X";
       const cp = Number.parseInt(hex ? num!.slice(1) : num!, hex ? 16 : 10);
-      return cp <= 0x10ffff ? String.fromCodePoint(cp) : match;
+      // Surrogates sit inside 0..10FFFF but are not scalar values; other illegal points throw.
+      const scalar =
+        Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff && (cp < 0xd800 || cp > 0xdfff);
+      return scalar ? String.fromCodePoint(cp) : match;
     },
   );
 }

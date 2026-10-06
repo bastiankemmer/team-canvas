@@ -240,7 +240,8 @@ export function Select({
         height: 28,
         padding: "0 8px",
         width: "100%",
-        colorScheme: "dark",
+        colorScheme:
+          theme.kind === "light" || theme.kind === "hc-light" ? "light" : "dark",
         ...style,
       }}
     >

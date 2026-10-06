@@ -95,6 +95,43 @@ describe('settlement over HTTP', () => {
     expect((await (await post('/api/settlement/revert', { entries: [1] })).json()).skipped).toHaveLength(1)
   })
 
+  it('a decided topic revert leaves the winning plan on the canvas', async () => {
+    const { root, server, post } = await boot()
+    const write = (actor: string, body: string) =>
+      fetch(`${server.url}/api/canvas/arch/source`, {
+        method: 'PUT',
+        headers: { 'x-canvas-actor': actor, 'x-canvas-topic': 'db' },
+        body,
+      })
+    await post('/api/settlement/intent', { actor: 'alice', topic: 'db', plan: 'postgres', canvas: 'arch' })
+    await post('/api/settlement/intent', { actor: 'bob', topic: 'db', plan: 'mongo', canvas: 'arch' })
+    expect((await write('alice', src('postgres'))).status).toBe(204)
+    expect((await write('bob', src('mongo'))).status).toBe(204)
+    expect((await post('/api/settlement/topics/db/settle', { plan: 'postgres', by: 'basti' })).status).toBe(200)
+
+    const outcome = await (await post('/api/settlement/revert', { topic: 'db', by: 'basti' })).json()
+    expect(outcome.reverted).toHaveLength(1)
+    expect(await readFile(path.join(root, 'arch.canvas.tsx'), 'utf8')).toBe(src('postgres'))
+  })
+
+  it('an open topic revert undoes every write for that topic', async () => {
+    const { root, server, post } = await boot()
+    const write = (actor: string, body: string) =>
+      fetch(`${server.url}/api/canvas/arch/source`, {
+        method: 'PUT',
+        headers: { 'x-canvas-actor': actor, 'x-canvas-topic': 'db' },
+        body,
+      })
+    await post('/api/settlement/intent', { actor: 'alice', topic: 'db', plan: 'postgres', canvas: 'arch' })
+    await post('/api/settlement/intent', { actor: 'bob', topic: 'db', plan: 'mongo', canvas: 'arch' })
+    expect((await write('alice', src('postgres'))).status).toBe(204)
+    expect((await write('bob', src('mongo'))).status).toBe(204)
+
+    const outcome = await (await post('/api/settlement/revert', { topic: 'db', by: 'basti' })).json()
+    expect(outcome.reverted).toHaveLength(2)
+    expect(await readFile(path.join(root, 'arch.canvas.tsx'), 'utf8')).toBe(src('start'))
+  })
+
   it('@task-11: a stale lock left by a crashed process is cleared and updates still apply in order', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-lock-'))
     const store = LocalFilesystemCanvasStore(root)

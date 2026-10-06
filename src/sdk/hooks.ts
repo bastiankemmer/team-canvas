@@ -1,6 +1,7 @@
 import {
   useCallback,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -169,17 +170,20 @@ export function useCanvasState<T>(
     const existing = store?.get(key);
     return existing === undefined ? defaultValue : (existing as T);
   });
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   const set: SetCanvasState<T> = useCallback(
     (action) => {
-      setValue((prev) => {
-        const next =
-          typeof action === "function"
-            ? (action as (prev: T) => T)(prev)
-            : action;
-        store?.set(key, next);
-        return next;
-      });
+      const next =
+        typeof action === "function"
+          ? (action as (prev: T) => T)(valueRef.current)
+          : action;
+      // A discarded React updater must not write the sidecar, so persist the
+      // computed value and then store that same value in state.
+      valueRef.current = next;
+      store?.set(key, next);
+      setValue(next);
     },
     [key, store],
   );

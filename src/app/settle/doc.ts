@@ -172,8 +172,11 @@ export function notify(
 
 export type DocStore = {
   read(): Promise<Doc>;
-  /** Change the document under the store's lock; `fn` returns what the caller needs. */
-  mutate<R>(fn: (doc: Doc) => R): Promise<R>;
+  /**
+   * Change the document under the store's lock. `fn` may be async: the lock is
+   * held until it settles, so a lease check and a source write stay one step.
+   */
+  mutate<R>(fn: (doc: Doc) => R | Promise<R>): Promise<R>;
 };
 
 export function createDocStore(store: CanvasStore): DocStore {
@@ -190,18 +193,18 @@ export function createDocStore(store: CanvasStore): DocStore {
     async read() {
       return parseDoc(await readRaw());
     },
-    async mutate<R>(fn: (doc: Doc) => R): Promise<R> {
+    async mutate<R>(fn: (doc: Doc) => R | Promise<R>): Promise<R> {
       let out!: R;
-      const apply = (current: unknown): Doc => {
+      const apply = async (current: unknown): Promise<Doc> => {
         const doc = parseDoc(current);
-        out = fn(doc);
+        out = await fn(doc);
         return doc;
       };
       if (store.updateState) {
         await store.updateState(SETTLEMENT_STATE_ID, apply);
       } else {
         // ponytail: stores without updateState can lose a concurrent update. Upgrade: implement updateState.
-        await store.writeState(SETTLEMENT_STATE_ID, apply(await readRaw()));
+        await store.writeState(SETTLEMENT_STATE_ID, await apply(await readRaw()));
       }
       return out;
     },

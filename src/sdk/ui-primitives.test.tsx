@@ -4,6 +4,7 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
+import { provideHostTheme } from "./hooks.js";
 import {
   Button,
   Callout,
@@ -58,6 +59,7 @@ function render(node: ReactNode): { container: HTMLElement; unmount: () => void 
 }
 
 afterEach(() => {
+  provideHostTheme(undefined);
   document.body.replaceChildren();
 });
 
@@ -298,6 +300,72 @@ describe("SDK UI / forms / misc", () => {
       expect(barrel[name]).toBeTypeOf("function");
     }
 
+    unmount();
+  });
+
+  it("F-047: disclosure buttons set aria-expanded to the open flag", () => {
+    const { container, unmount } = render(
+      createElement(
+        "div",
+        null,
+        createElement(
+          Card,
+          { collapsible: true, defaultOpen: true },
+          createElement(CardHeader, null, "card-head"),
+          createElement(CardBody, null, "card-body"),
+        ),
+        createElement(
+          CollapsibleSection,
+          { title: "section-head", defaultOpen: false },
+          "section-body",
+        ),
+        createElement(TodoListCard, {
+          defaultExpanded: false,
+          todos: [{ id: "1", content: "todo-body", status: "pending" }],
+        }),
+      ),
+    );
+
+    const buttonWith = (label: string): HTMLButtonElement => {
+      const btn = [...container.querySelectorAll("button")].find((node) =>
+        node.textContent?.includes(label),
+      );
+      expect(btn).toBeInstanceOf(HTMLButtonElement);
+      return btn as HTMLButtonElement;
+    };
+
+    expect(buttonWith("card-head").getAttribute("aria-expanded")).toBe("true");
+    expect(buttonWith("section-head").getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(buttonWith("Done").getAttribute("aria-expanded")).toBe("false");
+
+    act(() => {
+      buttonWith("card-head").click();
+      buttonWith("section-head").click();
+      buttonWith("Done").click();
+    });
+
+    expect(buttonWith("card-head").getAttribute("aria-expanded")).toBe("false");
+    expect(buttonWith("section-head").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    expect(buttonWith("Done").getAttribute("aria-expanded")).toBe("true");
+
+    unmount();
+  });
+
+  it("F-042: a light host theme sets Select colorScheme to light", () => {
+    provideHostTheme({ kind: "light" });
+    const { container, unmount } = render(
+      createElement(Select, {
+        value: "a",
+        options: [{ value: "a", label: "A" }],
+      }),
+    );
+    const select = container.querySelector("select");
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    expect((select as HTMLSelectElement).style.colorScheme).toBe("light");
     unmount();
   });
 });

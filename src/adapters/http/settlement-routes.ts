@@ -68,8 +68,7 @@ async function revert({ settlement, body }: Ctx): Promise<unknown> {
   const b = await body()
   let entries = Array.isArray(b.entries) ? b.entries.map(Number) : []
   if (typeof b.topic === 'string') {
-    const tagged = await settlement.listChanges({ topic: b.topic, limit: 500 })
-    entries = tagged.filter((e) => !e.reverted && e.tool !== 'revert').map((e) => e.n)
+    entries = await settlement.entriesToRevert(b.topic)
   }
   if (entries.length === 0 || entries.some((n) => !Number.isInteger(n))) {
     throw new Error('Body must be JSON: {"entries": [1, 2]} or {"topic": "name"}, plus optional "by"')

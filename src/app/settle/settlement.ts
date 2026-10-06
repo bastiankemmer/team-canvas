@@ -18,7 +18,15 @@ import {
   type LeaseInput,
   type ReleaseInput,
 } from "./leases.js";
-import { decide, declareIntent, escalate, listTopics, noteWrite, type IntentInput } from "./topics.js";
+import {
+  decide,
+  declareIntent,
+  entriesToRevert,
+  escalate,
+  listTopics,
+  noteWrite,
+  type IntentInput,
+} from "./topics.js";
 
 /**
  * Agent settlement for agents that share one store: write leases, a change log with
@@ -71,6 +79,8 @@ export function createSettlement(store: CanvasStore, now: () => number = Date.no
       assertLease(await docs.read(), canvas, actor, now()),
 
     listChanges: async (filter: ChangeFilter = {}) => selectChanges(await docs.read(), filter),
+    /** Full log: losers after a decision, otherwise every live write on the topic. */
+    entriesToRevert: async (topic: string) => entriesToRevert(await docs.read(), topic),
     recordWrite,
     revert,
 

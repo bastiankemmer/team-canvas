@@ -191,6 +191,21 @@ describe("extractCanvasLinks", () => {
     ]);
   });
 
+  it("keeps a surrogate numeric character reference raw and still returns the link", () => {
+    const source = [
+      "export default function Notes() {",
+      "  return (",
+      '    <CanvasLink to="ok">&#xD800;</CanvasLink>',
+      "  );",
+      "}",
+      "",
+    ].join("\n");
+
+    expect(extractCanvasLinks(source)).toEqual([
+      { to: "ok", line: lineOf(source, "CanvasLink"), label: "&#xD800;" },
+    ]);
+  });
+
   it("drops a to that is unsafe after decode and still returns the other safe links", () => {
     const source = [
       "export default function Notes() {",

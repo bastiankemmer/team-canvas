@@ -29,6 +29,7 @@ export function CollapsibleSection({
     <div style={style}>
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         style={{
           display: "flex",

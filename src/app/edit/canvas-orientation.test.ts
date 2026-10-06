@@ -491,6 +491,16 @@ export default function D() { return null; }`,
       applySlotFills(withTok, { abc123: "yes" }, new Set(["abc123"])),
     ).toBe("hello yes world");
   });
+  it("applySlotFills leaves a slot value that contains a later slot token unchanged", () => {
+    expect(
+      applySlotFills(
+        "__tc_slot_aaa__ __tc_slot_bbb__",
+        { aaa: "keep __tc_slot_bbb__", bbb: "later" },
+        new Set(["aaa", "bbb"]),
+      ),
+    ).toBe("keep __tc_slot_bbb__ later");
+  });
+
   it("pendingSlots: document order, labels from the wrapper, repeats numbered, partial fill keeps the rest", () => {
     const src = `import { Card, CardBody, CardHeader, Stack, Text } from "team-canvas/canvas";
 export default function C() {

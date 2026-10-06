@@ -1,11 +1,17 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   bundleCanvas,
   bundleFailureMessage,
   formatEsbuildErrors,
   isAllowedCanvasImport,
-  isBarePackageImport,
 } from "./bundle-canvas.js";
+
+const packageJsonPath = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../package.json",
+);
 
 describe("bundleCanvas edge paths", () => {
   it("mutation: isAllowedCanvasImport allowlists team-canvas/canvas + react only", () => {
@@ -13,20 +19,13 @@ describe("bundleCanvas edge paths", () => {
     expect(isAllowedCanvasImport("react")).toBe(true);
     expect(isAllowedCanvasImport("react/jsx-runtime")).toBe(true);
     expect(isAllowedCanvasImport("react-dom")).toBe(true);
-    expect(isAllowedCanvasImport("react-dom/client")).toBe(true);
+    expect(isAllowedCanvasImport("react-dom/client")).toBe(false);
+    expect(isAllowedCanvasImport("./package.json")).toBe(false);
+    expect(isAllowedCanvasImport(packageJsonPath)).toBe(false);
     expect(isAllowedCanvasImport("fs")).toBe(false);
     expect(isAllowedCanvasImport("node:fs")).toBe(false);
     expect(isAllowedCanvasImport("lodash")).toBe(false);
     expect(isAllowedCanvasImport("@scope/pkg")).toBe(false);
-  });
-
-  it("mutation: virtual: imports are excluded from bare-package external resolution", () => {
-    expect(isBarePackageImport("virtual:canvas-source")).toBe(false);
-    expect(isBarePackageImport("virtual:anything")).toBe(false);
-    expect(isBarePackageImport("./rel")).toBe(false);
-    expect(isBarePackageImport("/abs")).toBe(false);
-    expect(isBarePackageImport("lodash")).toBe(true);
-    expect(isBarePackageImport("react")).toBe(true);
   });
 
   it("crap:formatEsbuildErrors: empty errors, missing text, and joined texts", () => {
@@ -77,6 +76,26 @@ export default function C() { return <div>{String(fs)}</div> }
     expect(result.error).toMatch(/team-canvas\/canvas/);
   });
 
+  it("relative and absolute imports are not inlined into the viewer bundle", async () => {
+    const relative = await bundleCanvas({
+      source: `import pkg from "./package.json";
+export default function C() { return pkg.name }
+`,
+    });
+    expect(relative.ok).toBe(false);
+    if (relative.ok) throw new Error(relative.js);
+    expect(relative.error).toContain('Import "./package.json" is not allowed');
+
+    const absolute = await bundleCanvas({
+      source: `import pkg from ${JSON.stringify(packageJsonPath)};
+export default function C() { return pkg.name }
+`,
+    });
+    expect(absolute.ok).toBe(false);
+    if (absolute.ok) throw new Error(absolute.js);
+    expect(absolute.error).toContain(`Import "${packageJsonPath}" is not allowed`);
+  });
+
   it("foreign canvas module fails with a convert hint", async () => {
     expect(isAllowedCanvasImport("some-lib/canvas")).toBe(false);
     const result = await bundleCanvas({
@@ -100,5 +119,15 @@ export default function C() { return <Text>x</Text> }
     expect(result.js.trimStart().startsWith("export ")).toBe(false);
     expect(result.js).toMatch(/createRoot/);
     expect(result.js).not.toMatch(/\brequire\s*\(\s*["']fs["']\s*\)/);
+  });
+
+  it("viewer bundle is minified", async () => {
+    const result = await bundleCanvas({
+      source: "export default function Ok() { return null }\n",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    // ~711KB with minify off (react-dom). minify keeps it near 230KB.
+    expect(result.js.length).toBeLessThan(400_000);
   });
 });

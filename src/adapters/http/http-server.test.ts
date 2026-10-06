@@ -18,6 +18,7 @@ import {
   parseCanvasUploadName,
 } from './http-server.js'
 import { LocalFilesystemCanvasStore } from '../store/local-fs-canvas-store.js'
+import { SETTLEMENT_STATE_ID, SNAPSHOT_DIR } from '../../app/settle/doc.js'
 import { parseServeArgs } from '../../cli.js'
 import { createCanvasEditOps } from '../../app/edit/canvas-edit-ops.js'
 
@@ -1358,6 +1359,104 @@ export default function Solo() {
     expect(badPut.status).toBe(400)
     expect(await badPut.text()).toMatch(/Invalid canvas id/)
     expect(await (await fetch(`${server.url}/api/canvas/foo/state`)).json()).toEqual({ n: 1 })
+  })
+
+  it('F-002: PUT state does not replace .settlement or .snap snapshots; writeState still accepts those ids', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-reserved-state-'))
+    const store = LocalFilesystemCanvasStore(root)
+    const settlement = { topics: ['keep'], leases: { a: 1 } }
+    const snapId = `${SNAPSHOT_DIR}abc`
+    const snapshot = { source: 'before' }
+    await store.writeState(SETTLEMENT_STATE_ID, settlement)
+    await store.writeState(snapId, snapshot)
+
+    const server = await startHttpServer({
+      requireLease: false,
+      root,
+      host: '127.0.0.1',
+      port: 0,
+      store,
+    })
+    servers.push(server)
+
+    const putState = (id: string) => {
+      const encoded = id.split('/').map(encodeURIComponent).join('/')
+      return fetch(`${server.url}/api/canvas/${encoded}/state`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ wiped: true }),
+      })
+    }
+
+    const settlementPut = await putState(SETTLEMENT_STATE_ID)
+    expect(settlementPut.status).toBe(400)
+    expect(await settlementPut.text()).toMatch(/Reserved canvas state id/)
+    expect(await store.readState(SETTLEMENT_STATE_ID)).toEqual(settlement)
+
+    const snapPut = await putState(snapId)
+    expect(snapPut.status).toBe(400)
+    expect(await store.readState(snapId)).toEqual(snapshot)
+
+    const nextSettlement = { topics: ['keep'], leases: { a: 2 } }
+    const nextSnapshot = { source: 'rolled' }
+    await store.writeState(SETTLEMENT_STATE_ID, nextSettlement)
+    await store.writeState(snapId, nextSnapshot)
+    expect(await store.readState(SETTLEMENT_STATE_ID)).toEqual(nextSettlement)
+    expect(await store.readState(snapId)).toEqual(nextSnapshot)
+  })
+
+  it('F-004: POST /api/canvas emits data: rebuild to an open watcher', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-upload-rebuild-'))
+    const before = 'export default function Demo() { return <div>before</div> }\n'
+    const after = 'export default function Demo() { return <div>after-upload</div> }\n'
+    await writeFile(path.join(root, 'demo.canvas.tsx'), before, 'utf8')
+    // Silence fs.watch so a late echo cannot stand in for the upload's own rebuild.
+    const watchSpy = vi.spyOn(fs, 'watch').mockImplementation((() => {
+      return { close() {} } as fs.FSWatcher
+    }) as typeof fs.watch)
+    try {
+      const server = await startHttpServer({
+        requireLease: false,
+        root,
+        host: '127.0.0.1',
+        port: 0,
+      })
+      servers.push(server)
+
+      const watchRes = await fetch(`${server.url}/api/canvas/demo/watch`)
+      expect(watchRes.status).toBe(200)
+      const reader = watchRes.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffered = ''
+      const sawRebuild = async () => {
+        const deadline = Date.now() + 500
+        while (!buffered.includes('data: rebuild') && Date.now() < deadline) {
+          const chunk = await Promise.race([
+            reader.read(),
+            new Promise<{ done: false; value: undefined }>((resolve) =>
+              setTimeout(() => resolve({ done: false, value: undefined }), 40),
+            ),
+          ])
+          if (chunk.value) buffered += decoder.decode(chunk.value, { stream: true })
+        }
+        return buffered.includes('data: rebuild')
+      }
+
+      const pending = sawRebuild()
+      const uploaded = await fetch(`${server.url}/api/canvas`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'X-Canvas-Name': 'demo.canvas.tsx',
+        },
+        body: after,
+      })
+      expect(uploaded.status).toBe(201)
+      expect(await pending).toBe(true)
+      await reader.cancel().catch(() => undefined)
+    } finally {
+      watchSpy.mockRestore()
+    }
   })
 
   it('mutation: a non-string watch filename does not notify; a .canvas.tsx filename does', async () => {

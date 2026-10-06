@@ -28,13 +28,36 @@ describe("convertCanvasSource", () => {
     expect(convertCanvasSource(src, FROM)).toEqual({ source: src, changed: false });
   });
 
-  it("rewrites dynamic import() and side-effect import", () => {
-    expect(convertCanvasSource(`const m = import("${FROM}");\n`, FROM).source).toBe(
-      `const m = import("${NEXT}");\n`,
-    );
+  it("rewrites side-effect import declarations and leaves dynamic import() calls", () => {
     expect(convertCanvasSource(`import "${FROM}";\n`, FROM).source).toBe(
       `import "${NEXT}";\n`,
     );
+    expect(convertCanvasSource(`const m = import("${FROM}");\n`, FROM)).toEqual({
+      source: `const m = import("${FROM}");\n`,
+      changed: false,
+    });
+  });
+
+  it("rewrites import declarations and export-from clauses, not the same text in strings or comments", () => {
+    const src = [
+      `import { Text } from "${FROM}";`,
+      `export { Card } from '${FROM}';`,
+      `const note = 'import "${FROM}"';`,
+      `// export { Card } from '${FROM}'`,
+      `/* from "${FROM}" */`,
+      "",
+    ].join("\n");
+    expect(convertCanvasSource(src, FROM)).toEqual({
+      source: [
+        `import { Text } from "${NEXT}";`,
+        `export { Card } from '${NEXT}';`,
+        `const note = 'import "${FROM}"';`,
+        `// export { Card } from '${FROM}'`,
+        `/* from "${FROM}" */`,
+        "",
+      ].join("\n"),
+      changed: true,
+    });
   });
 
   it("does not touch the module name inside other string literals", () => {

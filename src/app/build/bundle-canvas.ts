@@ -8,21 +8,16 @@ const ENTRY_NS = 'team-canvas-entry'
 const SOURCE_NS = 'team-canvas-source'
 const BLOCKED_NS = 'team-canvas-blocked'
 
-/** Bare package imports allowed in canvas bundles (plus relative/absolute paths). */
-export function isAllowedCanvasImport(specifier: string): boolean {
-  if (specifier === 'team-canvas/canvas') return true
-  if (specifier === 'react' || specifier.startsWith('react/')) return true
-  if (specifier === 'react-dom' || specifier.startsWith('react-dom/')) return true
-  return false
-}
+/** Specifiers a canvas module may import. Anything else, including relative and absolute paths, is rejected. */
+const ALLOWED_CANVAS_IMPORTS = new Set([
+  'team-canvas/canvas',
+  'react',
+  'react-dom',
+  'react/jsx-runtime',
+])
 
-/** Exported for mutation/edge tests: virtual:/relative/absolute are not bare packages. */
-export function isBarePackageImport(specifier: string): boolean {
-  if (specifier.startsWith('virtual:')) return false
-  if (specifier.startsWith('.') || specifier.startsWith('/')) return false
-  // Windows absolute / UNC — leave to esbuild; canvas sources use posix-style bare pkgs
-  if (/^[A-Za-z]:[\\/]/.test(specifier)) return false
-  return true
+export function isAllowedCanvasImport(specifier: string): boolean {
+  return ALLOWED_CANVAS_IMPORTS.has(specifier)
 }
 
 function pkgRoot(): string {
@@ -88,12 +83,12 @@ function virtualCanvasPlugin(source: string, workingDir: string): esbuild.Plugin
         path: SOURCE,
         namespace: SOURCE_NS,
       }))
-      // Gate bare packages imported from author canvas source only (not react-dom → scheduler).
+      // Gate every import from author canvas source (not react-dom → scheduler).
+      // Relative and absolute specifiers resolve from the package root and would inline server files.
       build.onResolve({ filter: /.*/ }, (args) => {
         if (args.namespace !== SOURCE_NS && args.importer !== SOURCE) {
           return undefined
         }
-        if (!isBarePackageImport(args.path)) return undefined
         if (isAllowedCanvasImport(args.path)) return undefined
         return { path: args.path, namespace: BLOCKED_NS }
       })
@@ -159,6 +154,7 @@ export async function bundleCanvas(opts: {
       entryPoints: [ENTRY],
       bundle: true,
       write: false,
+      minify: true,
       format: 'iife',
       platform: 'browser',
       jsx: 'automatic',

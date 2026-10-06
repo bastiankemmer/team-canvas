@@ -10,6 +10,7 @@ import type { WriteMeta } from '../../app/settle/settlement.js'
 import { createAuthAdapter } from '../auth/create-auth.js'
 import { handleSettlementRoute, settlementStatus } from './settlement-routes.js'
 import { SettlementError } from '../../app/settle/settlement.js'
+import { SETTLEMENT_STATE_ID, SNAPSHOT_DIR } from '../../app/settle/doc.js'
 import {
   assertSafeCanvasId,
   LocalFilesystemCanvasStore,
@@ -412,8 +413,9 @@ export async function startHttpServer(
           }
           const source = await readRequestBody(req)
           try {
-            quietWatchFor(parsed.id)
-            await ops.writeSource(parsed.id, source, writeMeta(req))
+            await withOwnSourceWrite(parsed.id, () =>
+              ops.writeSource(parsed.id, source, writeMeta(req)),
+            )
           } catch (err) {
             const msg =
               err instanceof Error ? err.message : 'Failed to write canvas source'
@@ -424,7 +426,6 @@ export async function startHttpServer(
             res.end(msg)
             return
           }
-          bundleCache.delete(parsed.id)
           res.writeHead(201, {
             'content-type': 'application/json; charset=utf-8',
           })
@@ -494,6 +495,12 @@ export async function startHttpServer(
 
         if (canvasRoute?.kind === 'api' && canvasRoute.action === 'state') {
           const id = routeId
+          // Settlement writes its doc and snapshots through writeState. This route must not.
+          if (id === SETTLEMENT_STATE_ID || id.startsWith(SNAPSHOT_DIR)) {
+            res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+            res.end(`Reserved canvas state id "${id}"`)
+            return
+          }
           if (method === 'GET') {
             try {
               const state = await loadCanvasState(store, id)

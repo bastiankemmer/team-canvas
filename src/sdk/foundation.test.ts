@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, createElement, useEffect } from "react";
+import { act, createElement, StrictMode, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -24,7 +24,10 @@ import {
 } from "./hooks.js";
 import * as barrel from "./index.js";
 
-function mountHook<T>(useHook: () => T): {
+function mountHook<T>(
+  useHook: () => T,
+  options?: { strict?: boolean },
+): {
   result: { current: T };
   unmount: () => void;
 } {
@@ -40,7 +43,11 @@ function mountHook<T>(useHook: () => T): {
 
   act(() => {
     root = createRoot(container);
-    root.render(createElement(Probe));
+    root.render(
+      options?.strict
+        ? createElement(StrictMode, null, createElement(Probe))
+        : createElement(Probe),
+    );
   });
 
   return {
@@ -173,5 +180,25 @@ describe("SDK foundation", () => {
         "useHostTheme",
       ]),
     );
+  });
+
+  it("a discarded React updater does not write the sidecar", () => {
+    const writes: number[] = [];
+    provideCanvasStateStore({
+      get: () => undefined,
+      set: (_key, value) => {
+        writes.push(value as number);
+      },
+    });
+
+    const stateMount = mountHook(() => useCanvasState("count", 0), {
+      strict: true,
+    });
+    act(() => {
+      stateMount.result.current[1]((n) => n + 1);
+    });
+    expect(stateMount.result.current[0]).toBe(1);
+    expect(writes).toEqual([1]);
+    stateMount.unmount();
   });
 });

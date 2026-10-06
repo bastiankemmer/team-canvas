@@ -119,4 +119,85 @@ describe("SDK charts, diff, DAG", () => {
       root.unmount();
     });
   });
+
+  it("negative values stay inside the plot and an all-negative series keeps min below max", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let root: Root;
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(LineChart, {
+            categories: ["low", "high"],
+            series: [{ name: "mixed", data: [-4, 8] }],
+          }),
+          createElement(LineChart, {
+            categories: ["deep", "shallow"],
+            series: [{ name: "neg", data: [-8, -2] }],
+          }),
+        ),
+      );
+    });
+
+    const charts = container.querySelectorAll('svg[aria-label="line chart"]');
+    expect(charts).toHaveLength(2);
+
+    const ys = (svg: Element) =>
+      [...svg.querySelectorAll("circle")].map((c) => Number(c.getAttribute("cy")));
+
+    const inside = (svg: Element, cy: number) => {
+      const height = Number(svg.getAttribute("viewBox")?.split(" ")[3]);
+      expect(cy).toBeGreaterThanOrEqual(0);
+      expect(cy).toBeLessThanOrEqual(height);
+    };
+
+    const mixed = ys(charts[0]!);
+    expect(mixed).toHaveLength(2);
+    inside(charts[0]!, mixed[0]!);
+    inside(charts[0]!, mixed[1]!);
+    expect(mixed[0]).toBeGreaterThan(mixed[1]!);
+
+    const neg = ys(charts[1]!);
+    expect(neg).toHaveLength(2);
+    inside(charts[1]!, neg[0]!);
+    inside(charts[1]!, neg[1]!);
+    expect(neg[0]).toBeGreaterThan(neg[1]!);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("a one-value pie draws a circle", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let root: Root;
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        createElement(PieChart, {
+          data: [{ label: "only", value: 4 }],
+          size: 200,
+        }),
+      );
+    });
+
+    const svg = container.querySelector('svg[aria-label="pie chart"]');
+    expect(svg).not.toBeNull();
+    const circle = svg!.querySelector("circle");
+    expect(circle).not.toBeNull();
+    expect(circle!.getAttribute("cx")).toBe("100");
+    expect(circle!.getAttribute("cy")).toBe("100");
+    expect(circle!.getAttribute("r")).toBe("92");
+    expect(svg!.querySelector("path")).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });

@@ -336,4 +336,20 @@ describe("LocalFilesystemCanvasStore", () => {
       JSON.stringify(state),
     );
   });
+
+  it(
+    "reclaims a crashed lock once it is older than the stale threshold and the next update applies",
+    async () => {
+      const root = await mkdtemp(path.join(tmpdir(), "team-canvas-stale-lock-"));
+      const store = LocalFilesystemCanvasStore(root);
+      const lock = path.join(root, "k.canvas.data.json.lock");
+      await writeFile(lock, "", "utf8");
+
+      await store.updateState!("k", () => ({ n: 1 }));
+
+      expect(await store.readState("k")).toEqual({ n: 1 });
+      await expect(stat(lock)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+    20_000,
+  );
 });

@@ -674,6 +674,7 @@ export function CardHeader({
   return (
     <button
       type="button"
+      aria-expanded={open}
       onClick={toggle}
       style={{
         ...chrome,

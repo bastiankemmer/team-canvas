@@ -117,13 +117,18 @@ function domainMin(
   yMin: number | undefined,
 ): number {
   if (yMin !== undefined) return yMin;
-  if (!beginAtZero && all.length) return Math.min(...all);
-  return beginAtZero ? 0 : Math.min(0, ...all);
+  const dataMin = all.length ? Math.min(...all) : 0;
+  return beginAtZero ? Math.min(0, dataMin) : dataMin;
 }
 
-function domainMax(all: number[], yMax: number | undefined): number {
+function domainMax(
+  all: number[],
+  beginAtZero: boolean,
+  yMax: number | undefined,
+): number {
   if (yMax !== undefined) return yMax;
-  return all.length ? Math.max(...all) : 0;
+  const dataMax = all.length ? Math.max(...all) : 0;
+  return beginAtZero ? Math.max(0, dataMax) : dataMax;
 }
 
 function domainFrom(
@@ -135,7 +140,12 @@ function domainFrom(
 ): { min: number; max: number } {
   const all = [...values, ...(refs ?? []).map((r) => r.value)];
   let min = domainMin(all, beginAtZero, yMin);
-  let max = domainMax(all, yMax);
+  let max = domainMax(all, beginAtZero, yMax);
+  if (min > max) {
+    const hi = min;
+    min = max;
+    max = hi;
+  }
   if (min === max) max = min + 1;
   return { min, max };
 }
@@ -972,15 +982,30 @@ export function PieChart({
     const mid = (start + end) / 2;
     const explode = hover === i ? 6 : 0;
     const [ox, oy] = polar(0, 0, explode, mid);
+    const sliceCx = cx + ox;
+    const sliceCy = cy + oy;
+    // A full turn starts and ends at the same point; SVG drops that arc.
+    const fullTurn = sweep >= Math.PI * 2 - 1e-9;
+    const paint = {
+      fill: color,
+      opacity: active ? 1 : 0.35,
+      onMouseEnter: () => setHover(i),
+      onMouseLeave: () => setHover(null),
+    };
     slices.push(
-      createElement("path", {
-        key: i,
-        d: arcPath(cx + ox, cy + oy, r, start, end),
-        fill: color,
-        opacity: active ? 1 : 0.35,
-        onMouseEnter: () => setHover(i),
-        onMouseLeave: () => setHover(null),
-      }),
+      fullTurn
+        ? createElement("circle", {
+            key: i,
+            cx: sliceCx,
+            cy: sliceCy,
+            r,
+            ...paint,
+          })
+        : createElement("path", {
+            key: i,
+            d: arcPath(sliceCx, sliceCy, r, start, end),
+            ...paint,
+          }),
     );
   });
 

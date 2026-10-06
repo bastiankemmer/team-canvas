@@ -1,4 +1,4 @@
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import {
   canvasPaletteDark,
@@ -9,6 +9,7 @@ import {
   escapeHtml,
   indexShellHtml,
   notFoundShellHtml,
+  settlementShellHtml,
   viewerShellHtml,
 } from "./shell.js";
 
@@ -514,5 +515,42 @@ describe("host-ui shell HTML markers", () => {
     expect(linkedKnowledge.textContent ?? "").not.toContain("Unlinked");
     expect(linkedKnowledge.innerHTML).toBe([...linkedKnowledge.children].map((el) => el.outerHTML).join(""));
     expect(linkedOnly).toContain("data-library-toggle");
+  });
+
+  it("a 200 with a skipped revert stays on the page and the status line shows skipped", async () => {
+    const html = settlementShellHtml([
+      {
+        topic: "db",
+        status: "escalated",
+        positions: [
+          { actor: "ada", plan: "postgres", live: true },
+          { actor: "bob", plan: "sqlite", live: true },
+        ],
+      },
+    ]);
+    const navigations: string[] = [];
+    const virtualConsole = new VirtualConsole();
+    virtualConsole.on("jsdomError", (err: Error) => navigations.push(err.message));
+    const dom = new JSDOM(html, {
+      runScripts: "dangerously",
+      url: "http://canvas.test/settlement",
+      virtualConsole,
+      beforeParse(window) {
+        const w = window as unknown as { fetch: () => Promise<unknown> };
+        w.fetch = () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ skipped: [{ n: 2, reason: "leased by bob" }] }),
+            text: () => Promise.resolve(""),
+          });
+      },
+    });
+    dom.window.document.querySelector<HTMLButtonElement>("[data-settle]")!.click();
+    await vi.waitFor(() => {
+      expect(dom.window.document.querySelector("[data-settle-status]")?.textContent).toContain("skipped");
+    });
+    expect(navigations.join("\n")).not.toMatch(/navigation/);
+    expect(dom.window.document.querySelector("[data-settle-status]")?.textContent).toContain("leased by bob");
   });
 });

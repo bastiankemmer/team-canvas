@@ -6,7 +6,7 @@ import { callMcpTool } from "../../adapters/mcp/mcp-server.js";
 import { LocalFilesystemCanvasStore } from "../../adapters/store/local-fs-canvas-store.js";
 import type { CanvasStore } from "../../ports/canvas-store.js";
 import { createCanvasEditOps } from "../edit/canvas-edit-ops.js";
-import { createSettlement, MAX_ROUNDS, SettlementError } from "./settlement.js";
+import { createSettlement, MAX_ROUNDS, SETTLEMENT_STATE_ID, SettlementError } from "./settlement.js";
 
 const src = (label: string) => `export default function C() { return <span>${label}</span> }\n`;
 
@@ -340,5 +340,25 @@ describe("write leases", () => {
     const second = (await s.listChanges({ canvas: "arch" })).at(-1)!;
     expect((await s.revert([second.n], "basti")).skipped[0]!.reason).toContain("is leased by bob");
     expect((await s.revert([second.n], "bob")).reverted).toEqual([second.n]);
+  });
+
+  it("F-017: a lease taken after the pre-write snapshot leaves the canvas unchanged", async () => {
+    const { store, ops, s } = await setup();
+    await ops.writeSource("arch", src("edited"), { actor: "alice" });
+    const entry = (await s.listChanges({ canvas: "arch" })).find((e) => e.tool === "write_source")!;
+    const readState = store.readState.bind(store);
+    store.readState = async (id) => {
+      const value = await readState(id);
+      if (id === SETTLEMENT_STATE_ID) {
+        store.readState = readState;
+        await s.acquireLease({ actor: "bob", canvas: "arch" });
+      }
+      return value;
+    };
+    const result = await s.revert([entry.n], "basti");
+    expect(result.reverted).toEqual([]);
+    expect(result.skipped).toEqual([{ n: entry.n, reason: '"arch" is leased by bob' }]);
+    expect(await store.readSource("arch")).toBe(src("edited"));
+    expect(await s.listLeases()).toMatchObject([{ canvas: "arch", actor: "bob" }]);
   });
 });

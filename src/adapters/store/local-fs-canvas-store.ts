@@ -7,23 +7,26 @@ import type { CanvasStore } from "../../ports/canvas-store.js";
 const CANVAS_SUFFIX = ".canvas.tsx";
 const STATE_SUFFIX = ".canvas.data.json";
 const LOCK_RETRY_MS = 20;
-const LOCK_TRIES = 250;
 const LOCK_STALE_MS = 10_000;
 
 /**
  * Cross-process mutex: create `lock` exclusively, remove it when done.
  * ponytail: a lock older than LOCK_STALE_MS is taken as left by a crashed process
- * and removed; two waiters can race on that removal. Upgrade: flock via a native module.
+ * and removed; waiters poll until that age. Two waiters can race on that removal.
+ * Upgrade: flock via a native module.
  */
 async function withFileLock<T>(lock: string, fn: () => Promise<T>): Promise<T> {
-  for (let tries = 0; ; tries++) {
+  for (;;) {
     try {
       await (await open(lock, "wx")).close();
       break;
     } catch (err) {
-      if ((err as { code?: string }).code !== "EEXIST" || tries >= LOCK_TRIES) throw err;
+      if ((err as { code?: string }).code !== "EEXIST") throw err;
       const held = await stat(lock).catch(() => null);
-      if (held && Date.now() - held.mtimeMs > LOCK_STALE_MS) await rm(lock, { force: true });
+      if (held && Date.now() - held.mtimeMs > LOCK_STALE_MS) {
+        await rm(lock, { force: true });
+        continue;
+      }
       await sleep(LOCK_RETRY_MS);
     }
   }
@@ -146,8 +149,10 @@ export function LocalFilesystemCanvasStore(root: string): CanvasStore {
           if ((err as { code?: string }).code !== "ENOENT") throw err;
         }
         // Temp file then rename: unlocked readers never see half a file.
+        // Await so a caller can write canvas source before this lock drops.
+        const next = await update(current);
         const tmp = `${file}.${process.pid}.tmp`;
-        await writeFile(tmp, JSON.stringify(update(current)), "utf8");
+        await writeFile(tmp, JSON.stringify(next), "utf8");
         await rename(tmp, file);
       });
     },
