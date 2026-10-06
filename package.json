@@ -1,6 +1,6 @@
 {
   "name": "team-canvas",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Self-hosted server that renders .canvas.tsx files (one React component per file) in the browser, with a live editor and an MCP server for AI agents.",
   "scripts": {
     "build": "tsc -p tsconfig.json",
