@@ -217,12 +217,20 @@ describe("examples/okf", () => {
     const png = await readFile(path.join(repoRoot, "docs/images/library.png"));
     expect(createHash("sha1").update(png).digest("hex")).toBe(LIBRARY_PNG_SHA1);
 
-    const skill = await readFile(SKILL_PATH, "utf8");
-    expect(path.relative(repoRoot, SKILL_PATH).startsWith("..")).toBe(true);
-    expect(skill).toContain("The root is `<project-name>/index`");
-    expect(skill).toContain("The worked example id is `team-canvas/index`");
-    expect(skill).toContain('to="team-canvas/index"');
-    expect(skill).not.toMatch(/<CanvasLink to="index">/);
+    // Personal Cursor skill, outside this package. CI does not have the file.
+    let skill: string | undefined;
+    try {
+      skill = await readFile(SKILL_PATH, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+    if (skill !== undefined) {
+      expect(path.relative(repoRoot, SKILL_PATH).startsWith("..")).toBe(true);
+      expect(skill).toContain("The root is `<project-name>/index`");
+      expect(skill).toContain("The worked example id is `team-canvas/index`");
+      expect(skill).toContain('to="team-canvas/index"');
+      expect(skill).not.toMatch(/<CanvasLink to="index">/);
+    }
     const listed = execFileSync("git", ["ls-files"], {
       cwd: repoRoot,
       encoding: "utf8",
