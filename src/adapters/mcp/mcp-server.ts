@@ -3,7 +3,10 @@ import {
   createCanvasEditOps,
   type CanvasEditOps,
 } from "../../app/edit/canvas-edit-ops.js";
+import type { TopicStatus, WriteMeta } from "../../app/settle/settlement.js";
 import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
+
+const TOPIC_STATUSES: TopicStatus[] = ["open", "escalated", "settled"];
 
 /** ponytail: hand-roll tools-only JSON-RPC+stdio; upgrade to an MCP SDK only if framing needs grow. */
 
@@ -19,6 +22,25 @@ export type McpToolDef = {
   };
 };
 
+/**
+ * Who/why/topic for the change log. A write needs an `actor` that holds the canvas
+ * lease (acquire_lease). Pass the same `actor` on every call: pending notices
+ * (conflicts, escalations, decisions, leases) for that actor ride along on the reply.
+ */
+export const META_PROPS = {
+  actor: {
+    type: "string",
+    description:
+      "Your stable agent or chat id. Required for writes, which also need the canvas lease. Pass it on every call to receive notices",
+  },
+  reason: { type: "string", description: "Why you are making this change (kept in the change log)" },
+  topic: {
+    type: "string",
+    description:
+      "Decision topic this change belongs to (lowercase, e.g. auth-session-storage), see declare_intent",
+  },
+};
+
 export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "list_canvases",
@@ -29,14 +51,15 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "create_canvas",
     description:
-      "Create a new canvas. Optional source; without it a starter canvas is written. Fails if the id already exists",
+      "Create a new canvas. Optional source; without it a starter canvas is written. Fails if the id already exists. Needs the lease on the new id (acquire_lease first)",
     inputSchema: {
       type: "object",
       properties: {
+        ...META_PROPS,
         id: { type: "string" },
         source: { type: "string" },
       },
-      required: ["id"],
+      required: ["id", "actor"],
     },
   },
   {
@@ -55,10 +78,11 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
+        ...META_PROPS,
         id: { type: "string" },
         source: { type: "string" },
       },
-      required: ["id", "source"],
+      required: ["id", "source", "actor"],
     },
   },
   {
@@ -68,12 +92,13 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
+        ...META_PROPS,
         id: { type: "string" },
         old_string: { type: "string" },
         new_string: { type: "string" },
         replace_all: { type: "boolean" },
       },
-      required: ["id", "old_string", "new_string"],
+      required: ["id", "old_string", "new_string", "actor"],
     },
   },
   {
@@ -147,8 +172,9 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
       "Clone the repeating sibling with blank slots; returns the new slots (id, label) in document order",
     inputSchema: {
       type: "object",
-      properties: { id: { type: "string" } },
-      required: ["id"],
+      properties: {
+        ...META_PROPS, id: { type: "string" } },
+      required: ["id", "actor"],
     },
   },
   {
@@ -158,13 +184,90 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
+        ...META_PROPS,
         id: { type: "string" },
         slots: {
           type: "object",
           additionalProperties: { type: "string" },
         },
       },
-      required: ["id", "slots"],
+      required: ["id", "slots", "actor"],
+    },
+  },
+  {
+    name: "acquire_lease",
+    description:
+      "Take the write lease on a canvas before writing it (also for a canvas you are about to create). Returns { acquired, holder, expiresAt }. acquired:false means another agent holds it: they are told you wait, and you get a notice when it is released. Call again to renew; the lease expires on its own after ttl_seconds",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actor: { type: "string" },
+        canvas: { type: "string" },
+        ttl_seconds: { type: "number", description: "How long the lease holds (default 300, max 3600)" },
+      },
+      required: ["actor", "canvas"],
+    },
+  },
+  {
+    name: "release_lease",
+    description:
+      "Give the write lease on a canvas back when you are done, so others can write. Only the holder can release",
+    inputSchema: {
+      type: "object",
+      properties: { actor: { type: "string" }, canvas: { type: "string" } },
+      required: ["actor", "canvas"],
+    },
+  },
+  {
+    name: "list_leases",
+    description: "List the live write leases: canvas, holder, expiry and who is waiting",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "declare_intent",
+    description:
+      "Before you decide or build something other agents might also decide, claim a topic with your plan. Returns conflict:true when another agent holds a different plan (or the topic is settled differently), plus related topics on the same canvas. Call it again to concede (same plan as theirs settles it) or insist; after 2 insisted rounds it goes to a human. Use list_topics first to reuse an existing topic name",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actor: { type: "string" },
+        topic: { type: "string", description: "Lowercase letters, digits, . _ - (max 80)" },
+        plan: { type: "string", description: "What you will do / have decided, in one sentence" },
+        reason: { type: "string" },
+        canvas: { type: "string", description: "Canvas id this is about, to detect overlap" },
+        ttl_seconds: { type: "number", description: "How long your claim holds (default 1800)" },
+      },
+      required: ["actor", "topic", "plan"],
+    },
+  },
+  {
+    name: "list_topics",
+    description:
+      "List decision topics with every agent's plan and any settled decision. Optional status filter: open, escalated, settled",
+    inputSchema: { type: "object", properties: { status: { type: "string" } } },
+  },
+  {
+    name: "escalate_topic",
+    description:
+      "Hand an open conflict to a human now instead of waiting out the rounds. Do not change your plan until it is settled",
+    inputSchema: {
+      type: "object",
+      properties: { actor: { type: "string" }, topic: { type: "string" } },
+      required: ["actor", "topic"],
+    },
+  },
+  {
+    name: "list_changes",
+    description:
+      "Change log: who changed which canvas, with the reason and topic. Filter by canvas, topic or actor; newest last",
+    inputSchema: {
+      type: "object",
+      properties: {
+        canvas: { type: "string" },
+        topic: { type: "string" },
+        actor: { type: "string" },
+        limit: { type: "number" },
+      },
     },
   },
 ];
@@ -185,6 +288,18 @@ function requireString(args: Record<string, unknown>, key: string): string {
   if (typeof v !== "string") {
     throw new Error(`Missing or invalid argument: ${key}`);
   }
+  return v;
+}
+
+function metaFrom(args: Record<string, unknown>): WriteMeta {
+  const { actor, reason, topic } = args;
+  return { actor: actor as string, reason: reason as string, topic: topic as string };
+}
+
+function optionalString(args: Record<string, unknown>, key: string): string | undefined {
+  const v = args[key];
+  if (v === undefined) return undefined;
+  if (typeof v !== "string") throw new Error(`Invalid argument: ${key}`);
   return v;
 }
 
@@ -214,11 +329,12 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     ops.createCanvas(
       requireString(args, "id"),
       typeof args.source === "string" ? args.source : undefined,
+      metaFrom(args),
     ),
   read_source: (ops, args) => ops.readSource(requireString(args, "id")),
   write_source: async (ops, args) => {
     const id = requireString(args, "id");
-    await ops.writeSource(id, requireString(args, "source"));
+    await ops.writeSource(id, requireString(args, "source"), metaFrom(args));
     return { ok: true, id };
   },
   replace_in_source: (ops, args) =>
@@ -227,6 +343,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       requireString(args, "old_string"),
       requireString(args, "new_string"),
       args.replace_all === true,
+      metaFrom(args),
     ),
   check_canvas: (ops, args) => ops.checkCanvas(requireString(args, "id")),
   search_source: (ops, args) =>
@@ -239,12 +356,45 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     ops.inspectOrientation(requireString(args, "id")),
   add_oriented: async (ops, args) => {
     const id = requireString(args, "id");
-    return ops.addOriented(id);
+    return ops.addOriented(id, metaFrom(args));
   },
   fill_slots: async (ops, args) => {
     const id = requireString(args, "id");
-    return ops.fillSlots(id, requireSlotRecord(args));
+    return ops.fillSlots(id, requireSlotRecord(args), metaFrom(args));
   },
+  acquire_lease: (ops, args) =>
+    ops.settlement.acquireLease({
+      actor: args.actor,
+      canvas: args.canvas,
+      ttlSeconds: args.ttl_seconds,
+    }),
+  release_lease: (ops, args) =>
+    ops.settlement.releaseLease({ actor: args.actor, canvas: args.canvas }),
+  list_leases: (ops) => ops.settlement.listLeases(),
+  declare_intent: (ops, args) =>
+    ops.settlement.declareIntent({
+      actor: args.actor,
+      topic: args.topic,
+      plan: args.plan,
+      reason: args.reason,
+      canvas: args.canvas,
+      ttlSeconds: args.ttl_seconds,
+    }),
+  list_topics: (ops, args) => {
+    const status = optionalString(args, "status");
+    if (status !== undefined && !TOPIC_STATUSES.includes(status as TopicStatus)) {
+      throw new Error(`status must be one of: ${TOPIC_STATUSES.join(", ")}`);
+    }
+    return ops.settlement.listTopics(status as TopicStatus | undefined);
+  },
+  escalate_topic: (ops, args) => ops.settlement.escalate(args.actor, args.topic),
+  list_changes: (ops, args) =>
+    ops.settlement.listChanges({
+      canvas: optionalString(args, "canvas"),
+      topic: optionalString(args, "topic"),
+      actor: optionalString(args, "actor"),
+      limit: typeof args.limit === "number" ? args.limit : undefined,
+    }),
 };
 
 /** Invoke shared edit ops by MCP tool name. */
@@ -255,11 +405,34 @@ export async function callMcpTool(
 ): Promise<McpToolResult> {
   const handler = TOOL_HANDLERS[name];
   if (!handler) return textResult(`Unknown tool: ${name}`, true);
+  let result: McpToolResult;
   try {
-    return textResult(await handler(ops, args));
+    result = textResult(await handler(ops, args));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return textResult(message, true);
+    result = textResult(message, true);
+  }
+  return withNotices(ops, args, result);
+}
+
+/**
+ * Notices for the calling actor ride along as a second content item, so the tool's own
+ * result keeps its shape. Delivered once. A failing notice read never fails the tool.
+ */
+async function withNotices(
+  ops: CanvasEditOps,
+  args: Record<string, unknown>,
+  result: McpToolResult,
+): Promise<McpToolResult> {
+  if (typeof args.actor !== "string" || !args.actor.trim()) return result;
+  try {
+    const notices = await ops.settlement.takeNotices(args.actor.trim());
+    if (notices.length === 0) return result;
+    const extra = textResult({ notices });
+    return { ...result, content: [...result.content, ...extra.content] };
+  } catch (err) {
+    console.error("[team-canvas] notices:", err instanceof Error ? err.message : err);
+    return result;
   }
 }
 
@@ -442,12 +615,15 @@ export async function startMcpStdioServer(
   };
 
   return new Promise<void>((resolve, reject) => {
+    // One request at a time, in order; "end" waits for the ones still running so a
+    // client that closes stdin right after its last request still gets it applied.
+    let queue: Promise<void> = Promise.resolve();
     stdin.on("error", reject);
     stdin.on("data", (chunk: Buffer | string) => {
       pending += typeof chunk === "string" ? chunk : chunk.toString("utf8");
-      void processPending().catch(reject);
+      queue = queue.then(processPending).catch(reject);
     });
-    stdin.on("end", () => resolve());
+    stdin.on("end", () => void queue.then(() => resolve()));
     if (stdin.readableEnded) resolve();
   });
 }

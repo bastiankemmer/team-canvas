@@ -1,10 +1,38 @@
 import { lstatSync, mkdirSync, realpathSync } from "node:fs";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { CanvasStore } from "../../ports/canvas-store.js";
 
 const CANVAS_SUFFIX = ".canvas.tsx";
 const STATE_SUFFIX = ".canvas.data.json";
+const LOCK_RETRY_MS = 20;
+const LOCK_TRIES = 250;
+const LOCK_STALE_MS = 10_000;
+
+/**
+ * Cross-process mutex: create `lock` exclusively, remove it when done.
+ * ponytail: a lock older than LOCK_STALE_MS is taken as left by a crashed process
+ * and removed; two waiters can race on that removal. Upgrade: flock via a native module.
+ */
+async function withFileLock<T>(lock: string, fn: () => Promise<T>): Promise<T> {
+  for (let tries = 0; ; tries++) {
+    try {
+      await (await open(lock, "wx")).close();
+      break;
+    } catch (err) {
+      if ((err as { code?: string }).code !== "EEXIST" || tries >= LOCK_TRIES) throw err;
+      const held = await stat(lock).catch(() => null);
+      if (held && Date.now() - held.mtimeMs > LOCK_STALE_MS) await rm(lock, { force: true });
+      await sleep(LOCK_RETRY_MS);
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(lock, { force: true });
+  }
+}
 
 function invalidCanvasId(id: string): never {
   throw new Error(
@@ -105,6 +133,23 @@ export function LocalFilesystemCanvasStore(root: string): CanvasStore {
       const file = resolve(id, STATE_SUFFIX);
       mkdirSync(path.dirname(file), { recursive: true });
       await writeFile(file, JSON.stringify(state), "utf8");
+    },
+
+    async updateState(id, update) {
+      const file = resolve(id, STATE_SUFFIX);
+      mkdirSync(path.dirname(file), { recursive: true });
+      await withFileLock(`${file}.lock`, async () => {
+        let current: unknown;
+        try {
+          current = JSON.parse(await readFile(file, "utf8")) as unknown;
+        } catch (err) {
+          if ((err as { code?: string }).code !== "ENOENT") throw err;
+        }
+        // Temp file then rename: unlocked readers never see half a file.
+        const tmp = `${file}.${process.pid}.tmp`;
+        await writeFile(tmp, JSON.stringify(update(current)), "utf8");
+        await rename(tmp, file);
+      });
     },
   };
 }

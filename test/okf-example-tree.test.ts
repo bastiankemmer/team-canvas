@@ -69,9 +69,9 @@ const SKILL_PATH = "/Users/basti/.cursor/skills/okf/SKILL.md";
 
 const LIBRARY_PNG_SHA1 = "9b18c9701716a98e5446f6d6f89020713a3492ec";
 /** sha1 of the README HTTP table and the MCP tool lines, so a wording edit fails. */
-const HTTP_TABLE_SHA1 = "ec0d9bd3c275690eaec3034ce00a29cced4a15ab";
-const README_MCP_TOOLS_SHA1 = "3165b4f623d024e58af66fd7567a0274f5397026";
-const GETTING_STARTED_MCP_TOOLS_SHA1 = "771f584022dd7f3a7a264e2a66793c600464e3f6";
+const HTTP_TABLE_SHA1 = "568d24a5f2b1caae8db100e7017f0b821b412628";
+const README_MCP_TOOLS_SHA1 = "bad84be984b3a86c7ede8d271b1ffefcf117a264";
+const GETTING_STARTED_MCP_TOOLS_SHA1 = "85ec6fc8d84127fc2a5ffee87a6ee244e0885174";
 
 /** Flat id each moved canvas used before this tree. */
 const MOVED: Record<string, string> = {
@@ -187,17 +187,11 @@ describe("examples/okf", () => {
       expect(doc).toContain("OKF root is `<project-name>/index`");
       expect(doc).toContain("canvas id may contain `/`");
       expect(doc).toContain("library is a tree");
-      expect(doc).toContain("upload is one file in the store root");
+      expect(doc).toContain("Agents add and edit canvases over MCP");
       expect(doc).toContain("team-canvas serve examples/okf");
       expect(doc).not.toMatch(/\bCursor\b/);
     }
-    for (const image of [
-      "images/library.png",
-      "images/viewer.png",
-      "images/oriented-add.png",
-      "images/oriented-filled.png",
-      "images/code-view.png",
-    ]) {
+    for (const image of ["images/viewer.png", "images/code-view.png"]) {
       expect(gettingStarted).toContain(image);
     }
 

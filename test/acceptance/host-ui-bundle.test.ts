@@ -34,7 +34,7 @@ export default function Hello() {
       'utf8',
     )
 
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -183,7 +183,7 @@ export default function Hello() {
 
   it('@task-4: client receives data: rebuild and GET /canvas/sub/nested contains the new text', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-t4-'))
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,

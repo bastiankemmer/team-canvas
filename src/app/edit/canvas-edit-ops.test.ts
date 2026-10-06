@@ -23,7 +23,7 @@ describe("canvas edit ops", () => {
       "utf8",
     );
 
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     // readSource must return store content (BlockStatement→{} would yield undefined).
     const read = await ops.readSource("demo");
@@ -63,7 +63,7 @@ describe("canvas edit ops", () => {
 
   it("createCanvas: starter compiles, custom source wins, blank source falls back, duplicates and bad ids are refused", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-create-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     expect(await ops.createCanvas("team-notes")).toEqual({ ok: true, id: "team-notes" });
     const starter = await ops.readSource("team-notes");
@@ -90,7 +90,7 @@ describe("canvas edit ops", () => {
 
   it('@task-2: createCanvas("notes/demo") writes notes/demo.canvas.tsx as NotesDemo with H1 notes/demo, and notes/edit is rejected', async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-create-nested-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     const reserved = [
       "edit",
       "source",
@@ -164,7 +164,7 @@ describe("canvas edit ops", () => {
 
   it("replaceInSource: swaps exact text, leaves the rest byte-identical, refuses missing or ambiguous matches unless replace_all", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-replace-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     const big = "// header\n" + "const filler = 1;\n".repeat(5000);
     const original = `${big}<Text>Alpha</Text>\n<Text>Beta</Text>\n<Text>Beta</Text>\n${big}`;
     await writeFile(path.join(root, "big.canvas.tsx"), original, "utf8");
@@ -209,7 +209,7 @@ describe("canvas edit ops", () => {
 
   it("checkCanvas: ok for a good canvas; syntax error, bad import and missing default export come back as messages, not throws", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-check-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     const put = (id: string, src: string) => writeFile(path.join(root, `${id}.canvas.tsx`), src, "utf8");
     await put("good", "export default function A() { return <div>ok</div> }\n");
     await put("syntax", "export default function A() {\n  return <div>\n}\n");
@@ -243,7 +243,7 @@ describe("canvas edit ops", () => {
       "export default function Billing() { return null }\n",
       "utf8",
     );
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     expect(await ops.listLinks("notes")).toEqual([
       { to: "billing", line: 3, label: "Billing", exists: true },
@@ -258,7 +258,7 @@ describe("canvas edit ops", () => {
 
   it("@task-2: listLinks fails with ENOENT when the canvas file is missing and with Invalid canvas id for empty, .., or backslash", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-links-err-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     await expect(ops.listLinks("notes")).rejects.toMatchObject({ code: "ENOENT" });
     for (const bad of ["", "..", "a\\b"]) {
@@ -318,7 +318,7 @@ describe("canvas edit ops", () => {
       "export default function Billing() { return null }\n",
       "utf8",
     );
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     const line = (needle: string) => {
       const i = notes.split("\n").findIndex((row) => row.includes(needle));
       expect(i, needle).toBeGreaterThanOrEqual(0);
@@ -405,7 +405,7 @@ describe("canvas edit ops", () => {
       readState: (id) => inner.readState(id),
       writeState: (id, state) => inner.writeState(id, state),
     };
-    const ops = createCanvasEditOps(store);
+    const ops = createCanvasEditOps(store, { requireLease: false });
 
     const result = await ops.backlinks("b");
     expect(result).toEqual(
@@ -447,7 +447,7 @@ describe("canvas edit ops", () => {
 
   it("@task-3: backlinks fails with ENOENT when the canvas file is missing and with Invalid canvas id for empty, .., or backslash", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-backlinks-err-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     await expect(ops.backlinks("b")).rejects.toMatchObject({ code: "ENOENT" });
     for (const bad of ["", "..", "a\\b"]) {
@@ -495,7 +495,7 @@ describe("canvas edit ops", () => {
       readState: async () => null,
       writeState: async () => {},
     };
-    const ops = createCanvasEditOps(store);
+    const ops = createCanvasEditOps(store, { requireLease: false });
 
     expect(await ops.backlinks("b")).toEqual([
       { from: "c", line: 2, label: "From C" },
@@ -587,7 +587,7 @@ describe("canvas edit ops", () => {
       readState: (id) => inner.readState(id),
       writeState: (id, state) => inner.writeState(id, state),
     };
-    const ops = createCanvasEditOps(store);
+    const ops = createCanvasEditOps(store, { requireLease: false });
 
     const hits = await ops.searchLinked("a", "needle");
     expect(hits).toEqual(expected);
@@ -635,7 +635,7 @@ describe("canvas edit ops", () => {
       readState: async () => null,
       writeState: async () => {},
     };
-    const ops = createCanvasEditOps(store);
+    const ops = createCanvasEditOps(store, { requireLease: false });
 
     await expect(ops.searchLinked("a", "")).rejects.toThrow(
       "Search query must be non-empty",
@@ -675,7 +675,7 @@ describe("canvas edit ops", () => {
       readState: async () => null,
       writeState: async () => {},
     };
-    const ops = createCanvasEditOps(store);
+    const ops = createCanvasEditOps(store, { requireLease: false });
     const fromC = [{ id: "c", line: 1, snippet: "needle on c" }];
 
     failId = "b";
@@ -726,7 +726,7 @@ describe("canvas edit ops", () => {
       "}",
       "",
     ].join("\n");
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     await ops.writeSource("guides/editing-workflow", workflow);
     await ops.writeSource("reference/mcp-tools", target);
     await ops.writeSource(

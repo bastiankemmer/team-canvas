@@ -15,6 +15,7 @@ import {
   MCP_PROTOCOL_VERSION,
   MCP_TOOL_DEFS,
   startMcpStdioServer,
+  META_PROPS,
 } from "./mcp-server.js";
 
 const TWO_CARDS = `import { Button, Card, CardBody, CardHeader, Stack, Text } from "team-canvas/canvas";
@@ -46,7 +47,7 @@ export default function OrientedDemo() {
 async function tempOps(source = TWO_CARDS) {
   const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-"));
   await writeFile(path.join(root, "demo.canvas.tsx"), source, "utf8");
-  const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+  const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
   return { root, ops };
 }
 
@@ -59,7 +60,7 @@ describe("mcp stdio server", () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-"));
     await writeFile(path.join(root, "demo.canvas.tsx"), TWO_CARDS, "utf8");
 
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     const toolNames = MCP_TOOL_DEFS.map((t) => t.name);
     expect(toolNames).toEqual([
       "list_canvases",
@@ -75,6 +76,13 @@ describe("mcp stdio server", () => {
       "inspect_orientation",
       "add_oriented",
       "fill_slots",
+      "acquire_lease",
+      "release_lease",
+      "list_leases",
+      "declare_intent",
+      "list_topics",
+      "escalate_topic",
+      "list_changes",
     ]);
 
     const list = await callMcpTool(ops, "list_canvases");
@@ -182,7 +190,7 @@ describe("mcp stdio server", () => {
       root,
       stdin,
       stdout,
-      ops: createCanvasEditOps(LocalFilesystemCanvasStore(root)),
+      ops: createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false }),
     });
 
     stdin.write(
@@ -332,6 +340,13 @@ describe("mcp stdio server", () => {
       "inspect_orientation",
       "add_oriented",
       "fill_slots",
+      "acquire_lease",
+      "release_lease",
+      "list_leases",
+      "declare_intent",
+      "list_topics",
+      "escalate_topic",
+      "list_changes",
     ]);
     expect(
       MCP_TOOL_DEFS.find((t) => t.name === "read_source")?.inputSchema,
@@ -345,10 +360,11 @@ describe("mcp stdio server", () => {
     ).toEqual({
       type: "object",
       properties: {
+        ...META_PROPS,
         id: { type: "string" },
         source: { type: "string" },
       },
-      required: ["id", "source"],
+      required: ["id", "source", "actor"],
     });
     expect(
       MCP_TOOL_DEFS.find((t) => t.name === "search_source")?.inputSchema,
@@ -371,21 +387,22 @@ describe("mcp stdio server", () => {
       MCP_TOOL_DEFS.find((t) => t.name === "add_oriented")?.inputSchema,
     ).toEqual({
       type: "object",
-      properties: { id: { type: "string" } },
-      required: ["id"],
+      properties: { ...META_PROPS, id: { type: "string" } },
+      required: ["id", "actor"],
     });
     expect(
       MCP_TOOL_DEFS.find((t) => t.name === "fill_slots")?.inputSchema,
     ).toEqual({
       type: "object",
       properties: {
+        ...META_PROPS,
         id: { type: "string" },
         slots: {
           type: "object",
           additionalProperties: { type: "string" },
         },
       },
-      required: ["id", "slots"],
+      required: ["id", "slots", "actor"],
     });
     expect(
       MCP_TOOL_DEFS.find((t) => t.name === "list_canvases")?.inputSchema,
@@ -474,14 +491,15 @@ describe("mcp stdio server", () => {
     expect(byName.create_canvas).toEqual({
       name: "create_canvas",
       description:
-        "Create a new canvas. Optional source; without it a starter canvas is written. Fails if the id already exists",
+        "Create a new canvas. Optional source; without it a starter canvas is written. Fails if the id already exists. Needs the lease on the new id (acquire_lease first)",
       inputSchema: {
         type: "object",
         properties: {
+          ...META_PROPS,
           id: { type: "string" },
           source: { type: "string" },
         },
-        required: ["id"],
+        required: ["id", "actor"],
       },
     });
     expect(byName.read_source).toEqual({
@@ -500,10 +518,11 @@ describe("mcp stdio server", () => {
       inputSchema: {
         type: "object",
         properties: {
+          ...META_PROPS,
           id: { type: "string" },
           source: { type: "string" },
         },
-        required: ["id", "source"],
+        required: ["id", "source", "actor"],
       },
     });
     expect(byName.replace_in_source).toEqual({
@@ -513,12 +532,13 @@ describe("mcp stdio server", () => {
       inputSchema: {
         type: "object",
         properties: {
+          ...META_PROPS,
           id: { type: "string" },
           old_string: { type: "string" },
           new_string: { type: "string" },
           replace_all: { type: "boolean" },
         },
-        required: ["id", "old_string", "new_string"],
+        required: ["id", "old_string", "new_string", "actor"],
       },
     });
     expect(byName.check_canvas).toEqual({
@@ -559,8 +579,8 @@ describe("mcp stdio server", () => {
         "Clone the repeating sibling with blank slots; returns the new slots (id, label) in document order",
       inputSchema: {
         type: "object",
-        properties: idProp,
-        required: ["id"],
+        properties: { ...META_PROPS, ...idProp },
+        required: ["id", "actor"],
       },
     });
     expect(byName.fill_slots).toEqual({
@@ -570,13 +590,14 @@ describe("mcp stdio server", () => {
       inputSchema: {
         type: "object",
         properties: {
+          ...META_PROPS,
           id: { type: "string" },
           slots: {
             type: "object",
             additionalProperties: { type: "string" },
           },
         },
-        required: ["id", "slots"],
+        required: ["id", "slots", "actor"],
       },
     });
   });
@@ -919,7 +940,7 @@ describe("parseMcpArgs", () => {
 
   it("create_canvas: writes a starter or the given source, same { ok, id } as HTTP, refuses duplicates and bad ids", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-new-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     const made = await callMcpTool(ops, "create_canvas", { id: "fresh" });
     expect(made.isError).toBeFalsy();
@@ -968,7 +989,7 @@ describe("parseMcpArgs", () => {
 
   it("replace_in_source: edits in place with the same { ok, id, replacements } as HTTP; ambiguous, missing and malformed calls are errors", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-replace-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     const file = path.join(root, "demo.canvas.tsx");
     await writeFile(file, TWO_CARDS, "utf8");
 
@@ -1012,7 +1033,7 @@ describe("parseMcpArgs", () => {
 
   it("check_canvas: reports ok, then a build error with line:col after a bad edit; missing id is an error", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-check-"));
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     await writeFile(path.join(root, "demo.canvas.tsx"), "export default function A() { return <div>hi</div> }\n", "utf8");
 
     const good = await callMcpTool(ops, "check_canvas", { id: "demo" });
@@ -1044,7 +1065,7 @@ describe("parseMcpArgs", () => {
       "export default function Billing() { return null }\n",
       "utf8",
     );
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     const desc = MCP_TOOL_DEFS.find((t) => t.name === "list_links")?.description ?? "";
     expect(desc).toMatch(/outgoing canvas ids/i);
@@ -1121,7 +1142,7 @@ describe("parseMcpArgs", () => {
       "utf8",
     );
     await writeFile(path.join(root, "c.canvas.tsx"), c, "utf8");
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     const desc = MCP_TOOL_DEFS.find((t) => t.name === "backlinks")?.description ?? "";
     expect(desc).toMatch(/lists who links here/i);
@@ -1211,7 +1232,7 @@ describe("parseMcpArgs", () => {
       "export default function E() {\n  return <code>needle</code>;\n}\n",
       "utf8",
     );
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     const desc = MCP_TOOL_DEFS.find((t) => t.name === "search_linked")?.description ?? "";
     expect(desc).toMatch(/substring search of those direct targets/i);
@@ -1286,7 +1307,7 @@ describe("parseMcpArgs", () => {
       "}",
       "",
     ].join("\n");
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     await ops.writeSource("guides/editing-workflow", workflow);
     await ops.writeSource(
       "reference/mcp-tools",

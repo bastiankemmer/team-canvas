@@ -43,7 +43,7 @@ describe("edit acceptance", () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-accept-edit-"));
     await cp(path.join(examplesRoot, FIXTURE_FILE), path.join(root, FIXTURE_FILE));
 
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: "127.0.0.1",
       port: 0,
@@ -76,7 +76,8 @@ describe("edit acceptance", () => {
     );
     expect(editAfterAdd.status).toBe(200);
     const editHtml = await editAfterAdd.text();
-    expect(editHtml).toContain("orientInfo.slots");
+    expect(editHtml).toContain('data-shell="edit"');
+    expect(editHtml).toContain("readonly");
     // Leftover slots are served with labels, in document order.
     const orientBody = (await (
       await fetch(`${server.url}/api/canvas/${encodeURIComponent(FIXTURE_ID)}/orientation`)
@@ -84,7 +85,7 @@ describe("edit acceptance", () => {
     expect(orientBody.slots).toEqual(slots);
 
     // Fresh ops (empty process memory) can fill without re-add — source tokens are known.
-    const restarted = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const restarted = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     const fills: Record<string, string> = {};
     const values = ["Gamma accept", "Body gamma accept", "Go gamma accept"];
     slots.forEach((s, i) => {
@@ -117,7 +118,7 @@ describe("edit acceptance", () => {
       path.join(mcpRoot, FIXTURE_FILE),
     );
     const mcpStore = LocalFilesystemCanvasStore(mcpRoot);
-    const baseOps = createCanvasEditOps(mcpStore);
+    const baseOps = createCanvasEditOps(mcpStore, { requireLease: false });
     let addCalls = 0;
     let fillCalls = 0;
     const ops = {

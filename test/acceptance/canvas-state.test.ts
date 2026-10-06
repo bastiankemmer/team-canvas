@@ -33,7 +33,7 @@ export default function Counter() {
       'utf8',
     )
 
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -124,7 +124,7 @@ export default function Fail() { return <Text>ok</Text>; }
         throw new Error('disk full')
       },
     }
-    const failServer = await startHttpServer({
+    const failServer = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,

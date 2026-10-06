@@ -38,7 +38,7 @@ describe('acceptance fixtures', () => {
 
   it('@task-9: index lists fixtures, charts/forms-diff load without import rewrite, no login', async () => {
     // default Auth (DisabledAuthAdapter) — open access, no login screen
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root: examplesRoot,
       host: '127.0.0.1',
       port: 0,

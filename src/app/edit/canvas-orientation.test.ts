@@ -60,7 +60,7 @@ describe("canvas oriented edit", () => {
     await writeFile(path.join(root, "cards.canvas.tsx"), TWO_CARDS, "utf8");
     await writeFile(path.join(root, "solo.canvas.tsx"), NO_PATTERN, "utf8");
 
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
 
     const orientation = await ops.inspectOrientation("cards");
     expect(orientation).toEqual({ kind: "Card", addAvailable: true, slots: [] });
@@ -134,7 +134,7 @@ describe("canvas oriented edit", () => {
       expect(afterPartial).toContain(`__tc_slot_${s.id}__`);
     }
     // Fresh ops instance (no in-memory pending) can still fill leftover tokens.
-    const ops2 = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const ops2 = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
     const rest: Record<string, string> = {};
     partSlots.slice(1).forEach((s, i) => {
       rest[s.id] = `Rest${i}`;

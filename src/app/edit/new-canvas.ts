@@ -49,7 +49,7 @@ export default function ${componentName(id)}() {
   return (
     <Stack gap={12} style={{ padding: 16 }}>
       <H1>${id}</H1>
-      <Text>Edit this canvas in the browser or from code.</Text>
+      <Text>Agents edit this canvas over MCP.</Text>
     </Stack>
   );
 }

@@ -24,6 +24,25 @@ export default function HttpApi() {
         <Text>
           <Code>POST /api/canvas/:id/add-oriented</Code>, <Code>/fill-slots</Code>: Oriented Add.
         </Text>
+        <Text>
+          <Code>GET /api/settlement/leases</Code>, <Code>POST /api/settlement/leases/acquire</Code>,{" "}
+          <Code>/release</Code>: a write needs an actor that holds the canvas lease, otherwise it is
+          refused (400 without an actor, 409 without the lease).
+        </Text>
+        <Text>
+          <Code>POST /api/settlement/intent</Code>, <Code>/notices</Code>,{" "}
+          <Code>/topics/:topic/escalate</Code>: agents declare intent, take their notices and
+          escalate a conflict. Writes can carry <Code>X-Canvas-Actor</Code>,{" "}
+          <Code>X-Canvas-Reason</Code> and <Code>X-Canvas-Topic</Code>.
+        </Text>
+        <Text>
+          <Code>GET /api/settlement/topics</Code>, <Code>/changes</Code>: topics with every
+          agent's plan, and the change log.
+        </Text>
+        <Text>
+          <Code>POST /api/settlement/topics/:topic/settle</Code>, <Code>/revert</Code>: a human
+          settles a topic and rolls back writes. <Code>GET /settlement</Code> is the decision page.
+        </Text>
       </Stack>
       <H2>Related</H2>
       <Stack gap={4}>

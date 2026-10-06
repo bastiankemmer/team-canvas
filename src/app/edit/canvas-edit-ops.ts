@@ -11,6 +11,14 @@ import {
 import { bundleCanvas } from "../build/bundle-canvas.js";
 import { extractCanvasLinks } from "./canvas-links.js";
 import { assertNewCanvasId, starterSource } from "./new-canvas.js";
+import {
+  createSettlement,
+  normalizeMeta,
+  readSourceOrNull,
+  type NormalizedMeta,
+  type Settlement,
+  type WriteMeta,
+} from "../settle/settlement.js";
 
 export type SearchHit = { line: number; snippet: string };
 
@@ -48,17 +56,21 @@ export type CheckResult =
   | { ok: false; id: string; error: string };
 
 export type CanvasEditOps = {
+  /** Change log, intents, topics and rollback shared by every write below. */
+  settlement: Settlement;
   listCanvases(): Promise<string[]>;
   /** New canvas from `source`, or a starter file. Refuses an id that already exists. */
-  createCanvas(id: string, source?: string): Promise<CreateResult>;
+  createCanvas(id: string, source?: string, meta?: WriteMeta): Promise<CreateResult>;
   readSource(id: string): Promise<string>;
-  writeSource(id: string, source: string): Promise<void>;
+  /** Every write takes optional `meta` (who, why, topic) for the change log. */
+  writeSource(id: string, source: string, meta?: WriteMeta): Promise<void>;
   /** Replace exact text in place; the rest of the file stays byte-identical. */
   replaceInSource(
     id: string,
     oldText: string,
     newText: string,
     replaceAll?: boolean,
+    meta?: WriteMeta,
   ): Promise<ReplaceResult>;
   /** Bundle the canvas and report errors (`line:col message`) instead of throwing. */
   checkCanvas(id: string): Promise<CheckResult>;
@@ -70,8 +82,8 @@ export type CanvasEditOps = {
   /** Substring search of direct outgoing canvases, one hop. */
   searchLinked(id: string, query: string): Promise<LinkedSearchHit[]>;
   inspectOrientation(id: string): Promise<OrientationInfo>;
-  addOriented(id: string): Promise<SlotsResult>;
-  fillSlots(id: string, slots: Record<string, string>): Promise<SlotsResult>;
+  addOriented(id: string, meta?: WriteMeta): Promise<SlotsResult>;
+  fillSlots(id: string, slots: Record<string, string>, meta?: WriteMeta): Promise<SlotsResult>;
 };
 
 function isEnoent(err: unknown): boolean {
@@ -83,27 +95,69 @@ function isEnoent(err: unknown): boolean {
   );
 }
 
+export type EditOpsOptions = {
+  /**
+   * Every write must name an `actor` that holds the canvas lease (default true).
+   * Turn off only for single-process embedding where nothing else writes.
+   */
+  requireLease?: boolean;
+};
+
 /** Shared read/write/search/orient over CanvasStore — HTTP and MCP call only this. */
-export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
+export function createCanvasEditOps(
+  store: CanvasStore,
+  { requireLease = true }: EditOpsOptions = {},
+): CanvasEditOps {
+  const settlement = createSettlement(store);
+
+  /** First step of every write: validate who/why/topic and, unless leases are off, check the lease. */
+  async function guard(id: string, meta: WriteMeta | undefined): Promise<NormalizedMeta> {
+    const normalized = normalizeMeta(meta);
+    if (requireLease) await settlement.assertLease(id, meta?.actor);
+    return normalized;
+  }
+
+  /** Write, then log who/why. A failing log never fails (or undoes) a write that landed. */
+  async function write(
+    id: string,
+    tool: string,
+    next: string,
+    normalized: NormalizedMeta,
+    known?: string | null,
+  ): Promise<void> {
+    const before = known === undefined ? await readSourceOrNull(store, id) : known;
+    await store.writeSource(id, next);
+    try {
+      await settlement.recordWrite({ canvas: id, tool, before, after: next }, normalized);
+    } catch (err) {
+      console.error("[team-canvas] change log:", err instanceof Error ? err.message : err);
+    }
+  }
+
   return {
+    settlement,
     listCanvases: () => store.list(),
-    async createCanvas(id, source) {
+    async createCanvas(id, source, meta) {
       assertNewCanvasId(id);
+      const normalized = await guard(id, meta);
       // ponytail: list-then-write can race with a parallel create of the same id;
       // fix with an exclusive-create (`wx`) on the store port if that ever matters.
       if ((await store.list()).includes(id)) {
         throw new Error(`Canvas "${id}" already exists`);
       }
-      await store.writeSource(id, source?.trim() ? source : starterSource(id));
+      await write(id, "create_canvas", source?.trim() ? source : starterSource(id), normalized, null);
       return { ok: true, id };
     },
     readSource: (id) => store.readSource(id),
-    writeSource: (id, source) => store.writeSource(id, source),
+    async writeSource(id, source, meta) {
+      await write(id, "write_source", source, await guard(id, meta));
+    },
     async checkCanvas(id) {
       const result = await bundleCanvas({ source: await store.readSource(id) });
       return result.ok ? { ok: true, id } : { ok: false, id, error: result.error };
     },
-    async replaceInSource(id, oldText, newText, replaceAll = false) {
+    async replaceInSource(id, oldText, newText, replaceAll = false, meta) {
+      const normalized = await guard(id, meta);
       if (!oldText) {
         throw new Error("old_string must be non-empty");
       }
@@ -119,7 +173,7 @@ export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
           `Text to replace matches ${replacements} places in canvas "${id}"; add surrounding text to make it unique, or set replace_all`,
         );
       }
-      await store.writeSource(id, parts.join(newText));
+      await write(id, "replace_in_source", parts.join(newText), normalized, source);
       return { ok: true, id, replacements };
     },
     async searchSource(id, query) {
@@ -188,18 +242,20 @@ export function createCanvasEditOps(store: CanvasStore): CanvasEditOps {
       const source = await store.readSource(id);
       return inspectSourceOrientation(source);
     },
-    async addOriented(id) {
+    async addOriented(id, meta) {
+      const normalized = await guard(id, meta);
       const source = await store.readSource(id);
       const { source: next, slots } = addOrientedSibling(source);
-      await store.writeSource(id, next);
+      await write(id, "add_oriented", next, normalized, source);
       return { ok: true, id, slots };
     },
-    async fillSlots(id, slots) {
+    async fillSlots(id, slots, meta) {
+      const normalized = await guard(id, meta);
       const source = await store.readSource(id);
       // Tokens in source are known (survive HTTP↔MCP handoff / process restart).
       const known = slotIdsFromSource(source);
       const next = applySlotFills(source, slots, known);
-      await store.writeSource(id, next);
+      await write(id, "fill_slots", next, normalized, source);
       // Leftover `__tc_slot_*__` tokens remain fillable; no process-wide expire.
       return { ok: true, id, slots: pendingSlots(next) };
     },

@@ -27,6 +27,13 @@ export default function McpTools() {
           Follow links: <Code>list_links</Code>, <Code>backlinks</Code>,{" "}
           <Code>search_linked</Code>.
         </Text>
+        <Text>
+          Agents that share a store: <Code>acquire_lease</Code>, <Code>release_lease</Code>,{" "}
+          <Code>list_leases</Code>, <Code>declare_intent</Code>, <Code>list_topics</Code>,{" "}
+          <Code>escalate_topic</Code>, <Code>list_changes</Code>. A write needs an{" "}
+          <Code>actor</Code> that holds the canvas lease, and takes optional <Code>reason</Code> and{" "}
+          <Code>topic</Code>; pass the same actor on every call to receive notices.
+        </Text>
       </Stack>
       <H2>Related</H2>
       <Stack gap={4}>

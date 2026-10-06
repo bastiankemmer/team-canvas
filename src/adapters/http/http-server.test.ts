@@ -50,7 +50,7 @@ describe('team-canvas serve', () => {
     expect(flagged.port).toBe(9999)
 
     const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-serve-'))
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -70,7 +70,7 @@ describe('team-canvas serve', () => {
     expect(viewerHtml).toContain('data-canvas-id="demo"')
 
     const denyAuth: Auth = { allow: () => false }
-    const locked = await startHttpServer({
+    const locked = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -110,7 +110,7 @@ describe('team-canvas serve', () => {
   it('challenger: missing root fails before listen with a clear message', async () => {
     const missing = path.join(tmpdir(), `team-canvas-missing-${Date.now()}`)
     await expect(
-      startHttpServer({ root: missing, host: '127.0.0.1', port: 0 }),
+      startHttpServer({ requireLease: false, root: missing, host: '127.0.0.1', port: 0 }),
     ).rejects.toThrow(/missing or unreadable/)
   })
 
@@ -125,7 +125,7 @@ describe('team-canvas serve', () => {
       path.join(root, 'hidden.canvas.tsx'),
     )
 
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -169,7 +169,7 @@ describe('team-canvas serve', () => {
       /not a directory/,
     )
     await expect(
-      startHttpServer({ root: fileRoot, host: '127.0.0.1', port: 0 }),
+      startHttpServer({ requireLease: false, root: fileRoot, host: '127.0.0.1', port: 0 }),
     ).rejects.toThrow(/not a directory/)
 
     const enoentStore: CanvasStore = {
@@ -219,7 +219,7 @@ describe('team-canvas serve', () => {
       `export default function Demo() { return null }\n`,
       'utf8',
     )
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -277,7 +277,7 @@ describe('team-canvas serve', () => {
       `export default function Demo() { return null }\n`,
       'utf8',
     )
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -317,7 +317,7 @@ describe('team-canvas serve', () => {
   it('mutation: 0.0.0.0 and :: bind hosts map client url to 127.0.0.1', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-loopback-'))
     for (const host of ['0.0.0.0', '::'] as const) {
-      const server = await startHttpServer({ root, host, port: 0 })
+      const server = await startHttpServer({ requireLease: false, root, host, port: 0 })
       servers.push(server)
       expect(server.host).toBe(host)
       expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
@@ -334,7 +334,7 @@ describe('team-canvas serve', () => {
       `export default function Demo() { return null }\n`,
       'utf8',
     )
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -378,7 +378,7 @@ describe('team-canvas serve', () => {
 
   it('@task-upload: keeps uploaded canvas source and serves it from the store', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-upload-'))
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -458,7 +458,7 @@ export default function OrientedDemo() {
       'utf8',
     )
 
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -627,7 +627,7 @@ export default function Solo() {
       'utf8',
     )
 
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -637,16 +637,17 @@ export default function Solo() {
     const index = await fetch(`${server.url}/`)
     expect(index.status).toBe(200)
     const indexHtml = await index.text()
-    expect(indexHtml).toContain('href="/canvas/demo/edit">Edit</a>')
+    expect(indexHtml).toContain('href="/canvas/demo/edit">Code</a>')
 
     const edit = await fetch(`${server.url}/canvas/demo/edit`)
     expect(edit.status).toBe(200)
     expect(edit.headers.get('content-type')).toMatch(/text\/html/)
     const editHtml = await edit.text()
     expect(editHtml).toContain('data-shell="edit"')
-    expect(editHtml).toContain('data-edit-chrome')
-    expect(editHtml).toContain('data-edit-add')
     expect(editHtml).toContain('data-edit-source')
+    expect(editHtml).toContain('readonly')
+    expect(editHtml).not.toContain('data-edit-add')
+    expect(editHtml).not.toContain('data-edit-save')
     expect(editHtml).toContain('edit-preview-mark')
     expect(editHtml).toContain('EventSource')
     expect(editHtml).toContain('/watch')
@@ -690,7 +691,7 @@ export default function Solo() {
 
   it('@task-new: POST /api/canvas/new creates a starter or given source; 409 on existing, 400 on bad id or body; library has a New form', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-new-'))
-    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
     servers.push(server)
     const store = LocalFilesystemCanvasStore(root)
     const post = (body: string) =>
@@ -736,8 +737,7 @@ export default function Solo() {
     ).not.toBe(201)
 
     const index = await (await fetch(`${server.url}/`)).text()
-    expect(index).toContain('data-new-form')
-    expect(index).toContain('>New</button>')
+    expect(index).not.toContain('data-new-form')
     expect(index).toContain('my-canvas')
   })
 
@@ -746,7 +746,7 @@ export default function Solo() {
     const store = LocalFilesystemCanvasStore(root)
     await store.writeSource('good', 'export default function A() { return <div>ok</div> }\n')
     await store.writeSource('bad', 'export default function A() { return <div> }\n')
-    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
     servers.push(server)
     const get = async (id: string) => fetch(`${server.url}/api/canvas/${id}/check`)
 
@@ -761,7 +761,7 @@ export default function Solo() {
     const root = await mkdtemp(path.join(tmpdir(), 'team-canvas-replace-'))
     const store = LocalFilesystemCanvasStore(root)
     await store.writeSource('doc', 'one two two three\n')
-    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
     servers.push(server)
     const post = (id: string, body: string) =>
       fetch(`${server.url}/api/canvas/${id}/replace`, {
@@ -810,8 +810,8 @@ export default function Solo() {
       'export default function Billing() { return null }\n',
       'utf8',
     )
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root))
-    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false })
+    const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
     servers.push(server)
 
     const listed = await ops.listLinks('notes')
@@ -903,8 +903,8 @@ export default function Solo() {
       'utf8',
     )
     await writeFile(path.join(root, 'c.canvas.tsx'), c, 'utf8')
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root))
-    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false })
+    const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
     servers.push(server)
 
     const listed = await ops.backlinks('b')
@@ -1005,8 +1005,8 @@ export default function Solo() {
       'export default function E() {\n  return <code>needle</code>;\n}\n',
       'utf8',
     )
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root))
-    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false })
+    const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
     servers.push(server)
 
     const hits = await ops.searchLinked('a', 'needle')
@@ -1079,14 +1079,14 @@ export default function Solo() {
       'utf8',
     )
 
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
     })
     servers.push(server)
     const store = LocalFilesystemCanvasStore(root)
-    const ops = createCanvasEditOps(store)
+    const ops = createCanvasEditOps(store, { requireLease: false })
 
     const viewer = await fetch(`${server.url}/canvas/notes/demo`)
     expect(viewer.status).toBe(200)
@@ -1229,13 +1229,13 @@ export default function Solo() {
       '}',
       '',
     ].join('\n')
-    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root))
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false })
     await ops.writeSource('guides/editing-workflow', workflow)
     await ops.writeSource(
       'reference/mcp-tools',
       'export default function McpTools() { return <div>needle</div> }\n',
     )
-    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
     servers.push(server)
 
     const listed = await ops.listLinks('guides/editing-workflow')
@@ -1268,14 +1268,14 @@ export default function Solo() {
       page('NotesDemo', 'nested-marker'),
       'utf8',
     )
-    const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+    const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
     servers.push(server)
 
     const edit = await fetch(`${server.url}/canvas/foo/edit`)
     expect(edit.status).toBe(200)
     const editHtml = await edit.text()
     expect(editHtml).toContain('data-shell="edit"')
-    expect(editHtml).toContain('data-edit-chrome')
+    expect(editHtml).toContain('data-edit-source')
     expect(editHtml).toContain('data-canvas-id="foo"')
     expect(editHtml).toContain('foo-marker')
 
@@ -1285,7 +1285,7 @@ export default function Solo() {
     expect(flatHtml).toContain('data-shell="viewer"')
     expect(flatHtml).toContain('data-canvas-id="edit"')
     expect(flatHtml).toContain('flat-edit-marker')
-    expect(flatHtml).not.toContain('data-edit-chrome')
+    expect(flatHtml).not.toContain('data-edit-source')
 
     const nested = await fetch(`${server.url}/canvas/notes/demo`)
     expect(nested.status).toBe(200)
@@ -1293,7 +1293,7 @@ export default function Solo() {
     expect(nestedHtml).toContain('data-shell="viewer"')
     expect(nestedHtml).toContain('data-canvas-id="notes/demo"')
     expect(nestedHtml).toContain('nested-marker')
-    expect(nestedHtml).not.toContain('data-edit-chrome')
+    expect(nestedHtml).not.toContain('data-edit-source')
 
     const viewer = await fetch(`${server.url}/canvas/foo`)
     expect(viewer.status).toBe(200)
@@ -1383,7 +1383,7 @@ export default function Solo() {
       return { close() {} } as fs.FSWatcher
     }) as typeof fs.watch)
     try {
-      const server = await startHttpServer({ root, host: '127.0.0.1', port: 0 })
+      const server = await startHttpServer({ requireLease: false, root, host: '127.0.0.1', port: 0 })
       servers.push(server)
 
       const open = async (id: string) => {
@@ -1463,7 +1463,7 @@ export default function Index() {
       readState: async () => ({}),
       writeState: async () => {},
     }
-    const server = await startHttpServer({
+    const server = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -1492,7 +1492,7 @@ export default function Index() {
       readState: async () => ({}),
       writeState: async () => {},
     }
-    const failing = await startHttpServer({
+    const failing = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -1522,7 +1522,7 @@ export default function Index() {
       readState: async () => ({}),
       writeState: async () => {},
     }
-    const blank = await startHttpServer({
+    const blank = await startHttpServer({ requireLease: false,
       root,
       host: '127.0.0.1',
       port: 0,
@@ -1534,7 +1534,7 @@ export default function Index() {
     expect(blankPage.headers.get('content-type')).toMatch(/text\/html/)
     const blankHtml = await blankPage.text()
     expect(blankHtml).toContain(
-      'No canvases yet. Create one with New or upload a .canvas.tsx file.',
+      'No canvases yet. Agents add them over MCP.',
     )
     expect(blankHtml).not.toContain('data-library-toggle')
     expect(reads).toBe(0)

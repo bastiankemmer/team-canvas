@@ -6,7 +6,10 @@ import type { CanvasStore } from '../../ports/canvas-store.js'
 import { bundleCanvas } from '../../app/build/bundle-canvas.js'
 import { createCanvasEditOps, type ReplaceResult, type SlotsResult } from '../../app/edit/canvas-edit-ops.js'
 import { loadLinkTree } from '../../app/edit/canvas-link-tree.js'
+import type { WriteMeta } from '../../app/settle/settlement.js'
 import { createAuthAdapter } from '../auth/create-auth.js'
+import { handleSettlementRoute, settlementStatus } from './settlement-routes.js'
+import { SettlementError } from '../../app/settle/settlement.js'
 import {
   assertSafeCanvasId,
   LocalFilesystemCanvasStore,
@@ -27,6 +30,11 @@ export type ServeOptions = {
   port?: number
   auth?: Auth
   store?: CanvasStore
+  /**
+   * Writes need an `actor` holding the canvas lease (default true, and always so from the CLI).
+   * Turn off only when embedding the server where nothing else writes.
+   */
+  requireLease?: boolean
 }
 
 export type RunningServer = {
@@ -75,6 +83,25 @@ function isMissingState(err: unknown): boolean {
 
 function isInvalidCanvasId(err: unknown): boolean {
   return err instanceof Error && /Invalid canvas id/.test(err.message)
+}
+
+/** Status for a failed write: a lease/actor refusal, a bad id, else `fallback`. */
+function writeFailureStatus(err: unknown, fallback: number): number {
+  if (err instanceof SettlementError) return settlementStatus(err)
+  return isInvalidCanvasId(err) ? 400 : fallback
+}
+
+/** Who/why/topic of a write, from the optional X-Canvas-Actor / -Reason / -Topic headers. */
+function writeMeta(req: http.IncomingMessage): WriteMeta {
+  const header = (name: string) => {
+    const v = req.headers[name]
+    return Array.isArray(v) ? v[0] : v
+  }
+  return {
+    actor: header('x-canvas-actor'),
+    reason: header('x-canvas-reason'),
+    topic: header('x-canvas-topic'),
+  }
 }
 
 function queryParam(reqUrl: string, name: string): string {
@@ -229,7 +256,7 @@ export async function startHttpServer(
   const auth = opts.auth ?? createAuthAdapter()
   const root = opts.root
   const store = opts.store ?? LocalFilesystemCanvasStore(root)
-  const ops = createCanvasEditOps(store)
+  const ops = createCanvasEditOps(store, { requireLease: opts.requireLease })
 
   const bundleCache = new Map<string, { key: string; js: string }>()
   const watchClients = new Set<WatchClient>()
@@ -386,12 +413,12 @@ export async function startHttpServer(
           const source = await readRequestBody(req)
           try {
             quietWatchFor(parsed.id)
-            await store.writeSource(parsed.id, source)
+            await ops.writeSource(parsed.id, source, writeMeta(req))
           } catch (err) {
             const msg =
               err instanceof Error ? err.message : 'Failed to write canvas source'
             console.error(`[team-canvas] writeSource ${parsed.id}:`, msg)
-            res.writeHead(isInvalidCanvasId(err) ? 400 : 500, {
+            res.writeHead(writeFailureStatus(err, 500), {
               'content-type': 'text/plain; charset=utf-8',
             })
             res.end(msg)
@@ -422,7 +449,7 @@ export async function startHttpServer(
           }
           try {
             const created = await withOwnSourceWrite(id, () =>
-              ops.createCanvas(id, source),
+              ops.createCanvas(id, source, writeMeta(req)),
             )
             res.writeHead(201, {
               'content-type': 'application/json; charset=utf-8',
@@ -430,23 +457,27 @@ export async function startHttpServer(
             res.end(JSON.stringify(created))
           } catch (err) {
             const msg = err instanceof Error ? err.message : 'Failed to create canvas'
-            const status = /already exists/.test(msg)
-              ? 409
-              : isInvalidCanvasId(err)
-                ? 400
-                : 500
+            const status = /already exists/.test(msg) ? 409 : writeFailureStatus(err, 500)
             res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' })
             res.end(msg)
           }
           return
         }
 
+        if (
+          (pathName === '/settlement' || pathName.startsWith('/api/settlement/')) &&
+          (await handleSettlementRoute(ops, req, res, pathName, () => readRequestBody(req)))
+        ) {
+          return
+        }
+
         if (pathName === '/' || pathName === '/index.html') {
           const ids = await store.list()
+          const waiting = (await ops.settlement.listTopics('escalated').catch(() => [])).length
           // Empty library lists once and does not read sources.
           const tree = ids.length === 0 ? undefined : await loadLinkTree(store)
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-          res.end(indexShellHtml(ids, tree))
+          res.end(indexShellHtml(ids, tree, waiting))
           return
         }
 
@@ -556,7 +587,7 @@ export async function startHttpServer(
               /non-empty|no repeating sibling pattern|unknown or expired|not found in canvas|matches \d+ places/i.test(
                 msg,
               )
-            res.writeHead(badClient ? 400 : 500, {
+            res.writeHead(writeFailureStatus(err, badClient ? 400 : 500), {
               'content-type': 'text/plain; charset=utf-8',
             })
             res.end(msg)
@@ -594,7 +625,7 @@ export async function startHttpServer(
             }
             const source = await readRequestBody(req)
             try {
-              await withOwnSourceWrite(id, () => ops.writeSource(id, source))
+              await withOwnSourceWrite(id, () => ops.writeSource(id, source, writeMeta(req)))
             } catch (err) {
               replyOpsError(err, 'Failed to write canvas source')
               return
@@ -674,7 +705,7 @@ export async function startHttpServer(
           if (action === 'add-oriented' && method === 'POST') {
             try {
               const result = await withOwnSourceWrite(id, () =>
-                ops.addOriented(id),
+                ops.addOriented(id, writeMeta(req)),
               )
               res.writeHead(200, {
                 'content-type': 'application/json; charset=utf-8',
@@ -702,7 +733,7 @@ export async function startHttpServer(
             let replaced: ReplaceResult
             try {
               replaced = await withOwnSourceWrite(id, () =>
-                ops.replaceInSource(id, old_string, new_string, body.replace_all === true),
+                ops.replaceInSource(id, old_string, new_string, body.replace_all === true, writeMeta(req)),
               )
             } catch (err) {
               replyOpsError(err, 'Failed to replace text')
@@ -749,7 +780,7 @@ export async function startHttpServer(
             }
             let filled: SlotsResult
             try {
-              filled = await withOwnSourceWrite(id, () => ops.fillSlots(id, slots))
+              filled = await withOwnSourceWrite(id, () => ops.fillSlots(id, slots, writeMeta(req)))
             } catch (err) {
               replyOpsError(err, 'Failed to fill slots')
               return

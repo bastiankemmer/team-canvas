@@ -7,6 +7,11 @@ export default function EditingWorkflow() {
         <H1>Editing workflow</H1>
         <Text tone="secondary">How an agent changes a canvas without rewriting it.</Text>
       </Stack>
+      <Text>
+        Before a write, <Code>acquire_lease</Code> with an actor and pass that actor on the call.
+        The write is refused without it. <Code>release_lease</Code> when you are done. If another
+        agent may decide the same thing, <Code>declare_intent</Code> first.
+      </Text>
       <H2>Order</H2>
       <Stack gap={4}>
         <Text>1. <Code>search_source</Code> finds the text. Do not read a whole large file.</Text>

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const GETTING_STARTED_AFTER_TOOLS =
-  ". `create_canvas` takes an `id` and an optional `source`; without a source it writes the same starter canvas as the New button, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Reading whole files wastes context. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.";
+  ". `create_canvas` takes an `id` and an optional `source`; without a source it writes a starter canvas, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Reading whole files wastes context. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.";
 
 describe("open knowledge docs", () => {
   it("@task-5: docs name the link HTTP routes and MCP tools, and the Open knowledge format roadmap item is gone", () => {
@@ -60,7 +60,7 @@ describe("open knowledge docs", () => {
     expect(roadmap).not.toContain("Open knowledge format");
   });
 
-  it("@task-9: both docs say a canvas id may contain /, the library is a tree, upload is one file in the store root, and the example is served with team-canvas serve examples/okf so those ids start at team-canvas/index, guides/editing-workflow, and reference/mcp-tools", () => {
+  it("@task-9: both docs say a canvas id may contain /, the library is a tree, agents add and edit canvases over MCP, and the example is served with team-canvas serve examples/okf so those ids start at team-canvas/index, guides/editing-workflow, and reference/mcp-tools", () => {
     const readme = readFileSync(path.join(root, "README.md"), "utf8");
     const gettingStarted = readFileSync(
       path.join(root, "docs/getting-started.md"),
@@ -70,7 +70,7 @@ describe("open knowledge docs", () => {
     for (const doc of [readme, gettingStarted]) {
       expect(doc).toContain("canvas id may contain `/`");
       expect(doc).toContain("library is a tree");
-      expect(doc).toContain("upload is one file in the store root");
+      expect(doc).toContain("Agents add and edit canvases over MCP");
       expect(doc).toContain("team-canvas serve examples/okf");
       expect(doc).toContain(
         "ids start at `team-canvas/index`, `guides/editing-workflow`, and `reference/mcp-tools`",
@@ -84,10 +84,9 @@ describe("open knowledge docs", () => {
       expect(doc).not.toMatch(/\bCursor\b/);
     }
 
-    expect(gettingStarted).toContain("images/library.png");
     expect(gettingStarted).toContain("images/viewer.png");
-    expect(gettingStarted).toContain("images/oriented-add.png");
-    expect(gettingStarted).toContain("images/oriented-filled.png");
     expect(gettingStarted).toContain("images/code-view.png");
+    expect(gettingStarted).not.toContain("images/oriented-add.png");
+    expect(gettingStarted).not.toContain("images/oriented-filled.png");
   });
 });
