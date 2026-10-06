@@ -1428,18 +1428,15 @@ export default function Solo() {
       const reader = watchRes.body!.getReader()
       const decoder = new TextDecoder()
       let buffered = ''
+      // One read at a time. A timeout that starts another read drops the chunk
+      // the first read already consumed, so a slow CI run never sees rebuild.
       const sawRebuild = async () => {
-        const deadline = Date.now() + 500
-        while (!buffered.includes('data: rebuild') && Date.now() < deadline) {
-          const chunk = await Promise.race([
-            reader.read(),
-            new Promise<{ done: false; value: undefined }>((resolve) =>
-              setTimeout(() => resolve({ done: false, value: undefined }), 40),
-            ),
-          ])
-          if (chunk.value) buffered += decoder.decode(chunk.value, { stream: true })
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) return false
+          buffered += decoder.decode(value, { stream: true })
+          if (buffered.includes('data: rebuild')) return true
         }
-        return buffered.includes('data: rebuild')
       }
 
       const pending = sawRebuild()
