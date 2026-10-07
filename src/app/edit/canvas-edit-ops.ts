@@ -10,6 +10,7 @@ import {
 } from "./canvas-orientation.js";
 import { bundleCanvas } from "../build/bundle-canvas.js";
 import { extractCanvasLinks } from "./canvas-links.js";
+import { moveMode, planMoves, type MoveMode, type MovePair } from "./move-canvas.js";
 import { assertNewCanvasId, starterSource } from "./new-canvas.js";
 import {
   createSettlement,
@@ -46,6 +47,9 @@ export type SlotsResult = { ok: true; id: string; slots: OrientSlot[] };
 
 /** Reply for create: same `{ ok, id }` over HTTP and MCP. */
 export type CreateResult = { ok: true; id: string };
+
+/** Reply for move: each canvas that changed id. An empty folder move is `moved: []`. */
+export type MoveResult = { ok: true; moved: MovePair[] };
 
 /** Reply for replace: same `{ ok, id, replacements }` over HTTP and MCP. */
 export type ReplaceResult = { ok: true; id: string; replacements: number };
@@ -84,7 +88,54 @@ export type CanvasEditOps = {
   inspectOrientation(id: string): Promise<OrientationInfo>;
   addOriented(id: string, meta?: WriteMeta): Promise<SlotsResult>;
   fillSlots(id: string, slots: Record<string, string>, meta?: WriteMeta): Promise<SlotsResult>;
+  /**
+   * Rename a canvas, or a folder of canvases. `folder: true` moves the directory.
+   * `match` is a filename glob and moves only those canvases inside the folder.
+   * If `from` is only a folder, it is moved as a folder even without the flag.
+   */
+  move(
+    from: string,
+    to: string,
+    opts?: { folder?: boolean; match?: string },
+    meta?: WriteMeta,
+  ): Promise<MoveResult>;
 };
+
+function requireMover(store: CanvasStore): {
+  pathKind: NonNullable<CanvasStore["pathKind"]>;
+  moveCanvas: NonNullable<CanvasStore["moveCanvas"]>;
+  moveDir: NonNullable<CanvasStore["moveDir"]>;
+} {
+  const { pathKind, moveCanvas, moveDir } = store;
+  if (pathKind && moveCanvas && moveDir) return { pathKind, moveCanvas, moveDir };
+  throw new Error("This store cannot move canvases");
+}
+
+async function readMoved(
+  pairs: readonly MovePair[],
+  readSource: (id: string) => Promise<string>,
+): Promise<Map<string, string>> {
+  const sources = new Map<string, string>();
+  for (const pair of pairs) sources.set(pair.from, await readSource(pair.from));
+  return sources;
+}
+
+async function commitMoved(
+  mode: MoveMode,
+  from: string,
+  to: string,
+  pairs: readonly MovePair[],
+  io: {
+    moveDir: (from: string, to: string) => Promise<void>;
+    moveCanvas: (from: string, to: string) => Promise<void>;
+  },
+): Promise<void> {
+  if (mode === "dir") {
+    await io.moveDir(from, to);
+    return;
+  }
+  for (const pair of pairs) await io.moveCanvas(pair.from, pair.to);
+}
 
 function isEnoent(err: unknown): boolean {
   return (
@@ -258,6 +309,31 @@ export function createCanvasEditOps(
       await write(id, "fill_slots", next, normalized, source);
       // Leftover `__tc_slot_*__` tokens remain fillable; no process-wide expire.
       return { ok: true, id, slots: pendingSlots(next) };
+    },
+    async move(from, to, opts, meta) {
+      const io = requireMover(store);
+      const mode = moveMode(from, await io.pathKind(from), opts);
+      const pairs = planMoves(await store.list(), from, to, mode, opts?.match);
+      let normalized = normalizeMeta(meta);
+      for (const pair of pairs) {
+        normalized = await guard(pair.from, meta);
+        await guard(pair.to, meta);
+      }
+      const sources = await readMoved(pairs, (id) => store.readSource(id));
+      await commitMoved(mode, from, to, pairs, io);
+      // ponytail: logged as a create at the new id. Rollback does not move the file back.
+      // Upgrade: a move entry that revert renames back, if anyone needs undo.
+      for (const pair of pairs) {
+        await settlement
+          .recordWrite(
+            { canvas: pair.to, tool: "move", before: null, after: sources.get(pair.from)! },
+            normalized,
+          )
+          .catch((err: unknown) => {
+            console.error("[team-canvas] change log:", err instanceof Error ? err.message : err);
+          });
+      }
+      return { ok: true, moved: pairs };
     },
   };
 }

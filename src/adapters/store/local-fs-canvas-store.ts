@@ -1,5 +1,5 @@
 import { lstatSync, mkdirSync, realpathSync } from "node:fs";
-import { open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CanvasStore } from "../../ports/canvas-store.js";
@@ -34,6 +34,40 @@ async function withFileLock<T>(lock: string, fn: () => Promise<T>): Promise<T> {
     return await fn();
   } finally {
     await rm(lock, { force: true });
+  }
+}
+
+function isEnoent(err: unknown): boolean {
+  return (err as { code?: string }).code === "ENOENT";
+}
+
+async function lstatOrNull(target: string): Promise<Awaited<ReturnType<typeof lstat>> | null> {
+  try {
+    return await lstat(target);
+  } catch (err) {
+    if (isEnoent(err)) return null;
+    throw err;
+  }
+}
+
+async function fileExists(target: string): Promise<boolean> {
+  try {
+    return (await lstat(target)).isFile();
+  } catch (err) {
+    if (isEnoent(err)) return false;
+    throw err;
+  }
+}
+
+/** POSIX rename overwrites. A placeholder created with `wx` makes that fail closed. */
+async function exclusiveRename(from: string, to: string): Promise<void> {
+  const handle = await open(to, "wx");
+  await handle.close();
+  try {
+    await rename(from, to);
+  } catch (err) {
+    await rm(to, { force: true });
+    throw err;
   }
 }
 
@@ -156,5 +190,81 @@ export function LocalFilesystemCanvasStore(root: string): CanvasStore {
         await rename(tmp, file);
       });
     },
+
+    async pathKind(id) {
+      const file = resolve(id, CANVAS_SUFFIX);
+      const dir = resolve(id, "");
+      const canvas = await fileExists(file);
+      let directory = false;
+      try {
+        const info = await lstat(dir);
+        directory = info.isDirectory() && !info.isSymbolicLink();
+      } catch (err) {
+        if (!isEnoent(err)) throw err;
+      }
+      if (canvas && directory) return "both";
+      if (canvas) return "canvas";
+      if (directory) return "dir";
+      return "none";
+    },
+
+    async moveCanvas(fromId, toId) {
+      if (fromId === toId) throw new Error(`"${fromId}" is already at "${toId}"`);
+      const fromFile = resolve(fromId, CANVAS_SUFFIX);
+      const toFile = resolve(toId, CANVAS_SUFFIX);
+      if (!(await fileExists(fromFile))) throw new Error(`Canvas "${fromId}" does not exist`);
+      const toState = resolve(toId, STATE_SUFFIX);
+      if ((await fileExists(toFile)) || (await fileExists(toState))) {
+        throw new Error(`Canvas "${toId}" already exists`);
+      }
+      mkdirSync(path.dirname(toFile), { recursive: true });
+      await exclusiveRename(fromFile, toFile);
+      const fromState = resolve(fromId, STATE_SUFFIX);
+      if (await fileExists(fromState)) {
+        try {
+          mkdirSync(path.dirname(toState), { recursive: true });
+          await exclusiveRename(fromState, toState);
+        } catch (err) {
+          await exclusiveRename(toFile, fromFile).catch(() => {});
+          throw err;
+        }
+      }
+      await pruneEmptyParents(root, fromId);
+    },
+
+    async moveDir(from, to) {
+      if (from === to || to.startsWith(`${from}/`)) {
+        throw new Error(`Cannot move folder "${from}" into itself`);
+      }
+      const fromDir = resolve(from, "");
+      const toDir = resolve(to, "");
+      const info = await lstatOrNull(fromDir);
+      if (!info?.isDirectory()) {
+        throw new Error(info ? `"${from}" is not a folder` : `Folder "${from}" does not exist`);
+      }
+      if (await lstatOrNull(toDir)) throw new Error(`"${to}" already exists`);
+      mkdirSync(path.dirname(toDir), { recursive: true });
+      await rename(fromDir, toDir);
+    },
   };
+}
+
+/** Remove emptied parents of a moved canvas, stopping at the store root. */
+async function pruneEmptyParents(root: string, fromId: string): Promise<void> {
+  let dir = path.dirname(path.join(root, `${fromId}${CANVAS_SUFFIX}`));
+  const rootReal = realpathSync(root);
+  for (;;) {
+    let here: string;
+    try {
+      here = realpathSync(dir);
+    } catch (err) {
+      if (isEnoent(err)) return;
+      throw err;
+    }
+    if (outsideRoot(path.relative(rootReal, here)) || path.relative(rootReal, here) === "") return;
+    const ents = await readdir(dir);
+    if (ents.length > 0) return;
+    await rm(dir);
+    dir = path.dirname(dir);
+  }
 }

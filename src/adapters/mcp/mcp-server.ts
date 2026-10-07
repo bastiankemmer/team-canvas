@@ -195,6 +195,30 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
     },
   },
   {
+    name: "move",
+    description:
+      "Move a canvas to a new id, or a folder of canvases onto a new folder. from/to are paths relative to the store root. Without folder, from is one canvas id; if from is only a folder, the folder is moved. folder:true moves the whole directory, including non-canvas files. match is a filename glob (* is the only wildcard), for example *.canvas.tsx or *Test.canvas.tsx, and moves only matching canvases inside the folder (state sidecars move with them). Needs the lease on every canvas you move and on each new id. Does not rewrite CanvasLink targets",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...META_PROPS,
+        from: { type: "string", description: "Canvas id, or folder path" },
+        to: { type: "string", description: "New canvas id, or destination folder" },
+        folder: {
+          type: "boolean",
+          description:
+            "Move the directory at from. When from is both a canvas file and a folder, this chooses the folder; otherwise the canvas file is moved",
+        },
+        match: {
+          type: "string",
+          description:
+            "Filename glob. * is the only wildcard. Matched against the canvas filename, for example *.canvas.tsx or *Test.canvas.tsx",
+        },
+      },
+      required: ["from", "to", "actor"],
+    },
+  },
+  {
     name: "acquire_lease",
     description:
       "Take the write lease on a canvas before writing it (also for a canvas you are about to create). Returns { acquired, holder, expiresAt }. acquired:false means another agent holds it: they are told you wait, and you get a notice when it is released. Call again to renew; the lease expires on its own after ttl_seconds",
@@ -362,6 +386,13 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     const id = requireString(args, "id");
     return ops.fillSlots(id, requireSlotRecord(args), metaFrom(args));
   },
+  move: (ops, args) =>
+    ops.move(
+      requireString(args, "from"),
+      requireString(args, "to"),
+      { folder: args.folder === true, match: optionalString(args, "match") },
+      metaFrom(args),
+    ),
   acquire_lease: (ops, args) =>
     ops.settlement.acquireLease({
       actor: args.actor,

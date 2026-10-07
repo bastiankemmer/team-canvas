@@ -18,16 +18,21 @@ const RESERVED_LAST = new Set([
   "backlinks",
 ]);
 
+const INVALID_ID =
+  'use letters, digits, "-" and "_", starting with a letter or digit';
+
+/** Folder path: each segment is a legal canvas-id segment. Route words are allowed here. */
+export function assertCanvasPath(id: string): void {
+  if (id.split("/").some((segment) => !SEGMENT.test(segment))) {
+    throw new Error(`Invalid canvas id "${id}": ${INVALID_ID}`);
+  }
+}
+
 export function assertNewCanvasId(id: string): void {
-  const segments = id.split("/");
-  const last = segments[segments.length - 1] ?? "";
-  if (
-    segments.some((segment) => !SEGMENT.test(segment)) ||
-    (id.includes("/") && RESERVED_LAST.has(last))
-  ) {
-    throw new Error(
-      `Invalid canvas id "${id}": use letters, digits, "-" and "_", starting with a letter or digit`,
-    );
+  assertCanvasPath(id);
+  const last = id.slice(id.lastIndexOf("/") + 1);
+  if (id.includes("/") && RESERVED_LAST.has(last)) {
+    throw new Error(`Invalid canvas id "${id}": ${INVALID_ID}`);
   }
 }
 

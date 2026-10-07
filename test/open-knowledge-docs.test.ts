@@ -52,7 +52,7 @@ describe("open knowledge docs", () => {
       .split("\n")
       .find((line) => line.startsWith("Tools:"));
     expect(tools).toBe(
-      "Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `list_links`, `backlinks`, `search_linked`" +
+      "Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `move`, `list_links`, `backlinks`, `search_linked`" +
         GETTING_STARTED_AFTER_TOOLS,
     );
     expect(tools).not.toContain("check_canvas");

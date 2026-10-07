@@ -17,4 +17,10 @@ export type CanvasStore = {
     id: string,
     update: (current: unknown) => unknown | Promise<unknown>,
   ): Promise<void>;
+  /** `canvas` is `id.canvas.tsx`, `dir` is a folder, `both` is a canvas file and a folder of the same name. */
+  pathKind?(id: string): Promise<"canvas" | "dir" | "both" | "none">;
+  /** Rename one canvas file and its state sidecar. Fails if `toId` already exists. */
+  moveCanvas?(fromId: string, toId: string): Promise<void>;
+  /** Rename a directory onto `to`. Fails if `to` already exists. */
+  moveDir?(from: string, to: string): Promise<void>;
 };

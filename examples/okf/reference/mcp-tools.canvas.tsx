@@ -17,7 +17,9 @@ export default function McpTools() {
         </Text>
         <Text>
           Create and change: <Code>create_canvas</Code>, <Code>write_source</Code> (whole file),{" "}
-          <Code>replace_in_source</Code> (part of a file), <Code>check_canvas</Code>.
+          <Code>replace_in_source</Code> (part of a file), <Code>check_canvas</Code>, <Code>move</Code>{" "}
+          (one canvas, or a folder with <Code>folder</Code>, or a filename glob in <Code>match</Code>
+          ).
         </Text>
         <Text>
           Oriented Add: <Code>inspect_orientation</Code>, <Code>add_oriented</Code>,{" "}
