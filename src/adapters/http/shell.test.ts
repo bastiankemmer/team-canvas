@@ -585,6 +585,42 @@ describe("host-ui shell HTML markers", () => {
     expect(indexShellHtml([])).not.toContain("Library style");
   });
 
+  it("the open folder is the url, and a canvas breadcrumb jumps back to it", () => {
+    const ids = ["team-canvas/index", "team-canvas/reference/chunking", "eva-space/index"];
+    const html = indexShellHtml(ids, undefined, 0, "team-canvas/reference");
+    const dom = new JSDOM(html, {
+      runScripts: "dangerously",
+      url: "http://canvas.test/?folder=team-canvas%2Freference",
+    });
+    const doc = dom.window.document;
+    const expanded = (name: string) =>
+      [...doc.querySelectorAll<HTMLButtonElement>('.md-groups[data-shell="index"] .md-disclosure')].find(
+        (btn) => btn.querySelector(".md-path")?.textContent === name,
+      );
+    expect(expanded("team-canvas/")?.getAttribute("aria-expanded")).toBe("true");
+    expect(expanded("reference/")?.getAttribute("aria-expanded")).toBe("true");
+    expect(expanded("eva-space/")?.getAttribute("aria-expanded")).toBe("false");
+
+    expanded("eva-space/")!.click();
+    expect(dom.window.location.search).toBe("?folder=eva-space");
+    expect(expanded("eva-space/")?.getAttribute("aria-expanded")).toBe("true");
+    expect(expanded("team-canvas/")?.getAttribute("aria-expanded")).toBe("false");
+    expect(expanded("reference/")?.getAttribute("aria-expanded")).toBe("false");
+
+    expanded("eva-space/")!.click();
+    expect(dom.window.location.search).toBe("");
+    expect(expanded("eva-space/")?.getAttribute("aria-expanded")).toBe("false");
+
+    const crumb = viewerShellHtml("bench-coffee-register/coffee-pos/brief", { kind: "ok", js: "" });
+    expect(crumb).toContain('<a href="/">Canvases</a>');
+    expect(crumb).toContain('href="/?folder=bench-coffee-register"');
+    expect(crumb).toContain('href="/?folder=bench-coffee-register%2Fcoffee-pos"');
+    expect(crumb).toContain('<span class="crumb-id">brief</span>');
+    expect(editShellHtml("bench-coffee-register/index", { kind: "ok", js: "" })).toContain(
+      'href="/?folder=bench-coffee-register"',
+    );
+  });
+
   it("a 200 with a skipped revert stays on the page and the status line shows skipped", async () => {
     const html = settlementShellHtml([
       {

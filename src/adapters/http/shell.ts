@@ -654,15 +654,50 @@ const libraryToggleScript = `(function () {
 })();`
 
 const materialCollapseScript = `(function () {
+  function setOpen(btn, open) {
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    var panel = document.getElementById(btn.getAttribute("aria-controls") || "");
+    if (panel) panel.hidden = !open;
+  }
+  function folderParam() {
+    return new URL(window.location.href).searchParams.get("folder") || "";
+  }
+  function reveal(btn) {
+    var group = btn.closest(".md-group");
+    while (group) {
+      var disclosure = group.querySelector(":scope > .md-subheader .md-disclosure");
+      if (disclosure) setOpen(disclosure, true);
+      var holder = group.parentElement;
+      group = holder ? holder.closest(".md-group") : null;
+    }
+  }
+  function openFolder(folder) {
+    document.querySelectorAll(".md-disclosure").forEach(function (btn) { setOpen(btn, false); });
+    if (!folder) return;
+    document.querySelectorAll(".md-disclosure").forEach(function (btn) {
+      if (btn.getAttribute("data-folder") === folder) reveal(btn);
+    });
+  }
+  openFolder(folderParam());
   document.querySelectorAll(".md-disclosure").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      var panel = document.getElementById(btn.getAttribute("aria-controls") || "");
-      if (!panel) return;
-      var open = btn.getAttribute("aria-expanded") !== "true";
-      btn.setAttribute("aria-expanded", open ? "true" : "false");
-      panel.hidden = !open;
+      var path = btn.getAttribute("data-folder") || "";
+      var next = path;
+      if (folderParam() === path) {
+        var group = btn.closest(".md-group");
+        var holder = group && group.parentElement;
+        var parentGroup = holder ? holder.closest(".md-group") : null;
+        var parentBtn = parentGroup ? parentGroup.querySelector(":scope > .md-subheader .md-disclosure") : null;
+        next = parentBtn ? (parentBtn.getAttribute("data-folder") || "") : "";
+      }
+      var url = new URL(window.location.href);
+      if (next) url.searchParams.set("folder", next);
+      else url.searchParams.delete("folder");
+      history.pushState(null, "", url.pathname + url.search);
+      openFolder(next);
     });
   });
+  window.addEventListener("popstate", function () { openFolder(folderParam()); });
 })();`
 
 const codeViewScript = String.raw`
@@ -742,6 +777,24 @@ function canvasPath(id: string): string {
   return id.split('/').map((part) => encodeURIComponent(part)).join('/')
 }
 
+function folderHref(folder: string): string {
+  return `/?folder=${encodeURIComponent(folder)}`
+}
+
+/** Canvases, then each folder in the id, then the canvas name. Folder crumbs open that folder. */
+function canvasBreadcrumb(canvasId: string): string {
+  const parts = canvasId.split('/')
+  const leaf = parts[parts.length - 1] ?? canvasId
+  const folders = parts.slice(0, -1)
+  const bits = [`<a href="/">Canvases</a>`]
+  for (let i = 0; i < folders.length; i++) {
+    const path = folders.slice(0, i + 1).join('/')
+    bits.push(`<a href="${folderHref(path)}">${escapeHtml(folders[i] ?? '')}</a>`)
+  }
+  bits.push(`<span class="crumb-id">${escapeHtml(leaf)}</span>`)
+  return `<nav class="crumb" aria-label="Breadcrumb">${bits.join('<span aria-hidden="true"> / </span>')}</nav>`
+}
+
 function canvasHeader(canvasId: string, mode: 'view' | 'edit'): string {
   const safe = escapeHtml(canvasId)
   const enc = canvasPath(canvasId)
@@ -752,9 +805,7 @@ function canvasHeader(canvasId: string, mode: 'view' | 'edit'): string {
     <span class="copy-feedback" data-copy-feedback aria-live="polite"></span>`
       : `<a class="btn" href="/canvas/${enc}">View</a>
     <p class="status" data-edit-status role="status"></p>`
-  return `<nav class="crumb" aria-label="Breadcrumb">
-    <a href="/">Canvases</a><span aria-hidden="true"> / </span><span class="crumb-id">${safe}</span>
-  </nav>
+  return `${canvasBreadcrumb(canvasId)}
   <div class="top-tools">${tools}</div>`
 }
 
@@ -911,6 +962,15 @@ function splitLibrary(nodes: readonly LibraryNode[]): {
   return { canvases, folders }
 }
 
+/** The URL folder, or an ancestor of it. Anything else stays collapsed. */
+function folderIsOpen(path: string, openFolder: string): boolean {
+  return openFolder !== '' && (path === openFolder || openFolder.startsWith(`${path}/`))
+}
+
+function linkTreeHas(node: LinkTreeNode, folder: string): boolean {
+  return node.id === folder || node.children.some((child) => linkTreeHas(child, folder))
+}
+
 /** One tree level. Child folder rows sit in the open panel, not as sibling path chunks. */
 function materialCollapseRow(
   label: string,
@@ -919,6 +979,8 @@ function materialCollapseRow(
   childrenHtml: string,
   shell: 'index' | 'knowledge',
   seq: { n: number },
+  folderPath: string,
+  open: boolean,
 ): string {
   const panelId = `md-${shell}-${seq.n}`
   seq.n += 1
@@ -927,12 +989,21 @@ function materialCollapseRow(
       ? ''
       : `<div class="md-grid">${cards.map((card) => materialCard(card, cardFolder(card.id))).join('')}</div>`
   const kids = childrenHtml === '' ? '' : `<div class="md-children">${childrenHtml}</div>`
-  return `<section class="md-group"><h2 class="md-subheader"><button type="button" class="md-disclosure" aria-expanded="false" aria-controls="${panelId}"><span class="md-chevron" aria-hidden="true"></span><span class="md-path">${escapeHtml(label)}</span><span class="md-count">${count}</span></button></h2><div class="md-panel" id="${panelId}" hidden>${grid}${kids}</div></section>`
+  const hidden = open ? '' : ' hidden'
+  return `<section class="md-group"><h2 class="md-subheader"><button type="button" class="md-disclosure" data-folder="${escapeHtml(folderPath)}" aria-expanded="${open ? 'true' : 'false'}" aria-controls="${panelId}"><span class="md-chevron" aria-hidden="true"></span><span class="md-path">${escapeHtml(label)}</span><span class="md-count">${count}</span></button></h2><div class="md-panel" id="${panelId}"${hidden}>${grid}${kids}</div></section>`
 }
 
-function materialCollapseFolder(node: Extract<LibraryNode, { kind: 'folder' }>, seq: { n: number }): string {
+function materialCollapseFolder(
+  node: Extract<LibraryNode, { kind: 'folder' }>,
+  parentPath: string,
+  openFolder: string,
+  seq: { n: number },
+): string {
+  const path = parentPath === '' ? node.name : `${parentPath}/${node.name}`
   const { canvases, folders } = splitLibrary(node.children)
-  const childrenHtml = folders.map((folder) => materialCollapseFolder(folder, seq)).join('')
+  const childrenHtml = folders
+    .map((folder) => materialCollapseFolder(folder, path, openFolder, seq))
+    .join('')
   return materialCollapseRow(
     `${node.name}/`,
     canvases.length + folders.length,
@@ -940,10 +1011,12 @@ function materialCollapseFolder(node: Extract<LibraryNode, { kind: 'folder' }>, 
     childrenHtml,
     'index',
     seq,
+    path,
+    folderIsOpen(path, openFolder),
   )
 }
 
-function materialCollapseFolders(ids: readonly string[], withPanel: boolean): string {
+function materialCollapseFolders(ids: readonly string[], withPanel: boolean, openFolder: string): string {
   const { canvases, folders } = splitLibrary(libraryTree([...ids]))
   const seq = { n: 0 }
   const root =
@@ -956,13 +1029,15 @@ function materialCollapseFolders(ids: readonly string[], withPanel: boolean): st
           '',
           'index',
           seq,
+          'root',
+          folderIsOpen('root', openFolder),
         )
-  const body = folders.map((folder) => materialCollapseFolder(folder, seq)).join('')
+  const body = folders.map((folder) => materialCollapseFolder(folder, '', openFolder, seq)).join('')
   const panelAttr = withPanel ? ' data-library-panel="folders"' : ''
   return `<div class="md-groups" data-shell="index"${panelAttr}>${root}${body}</div>`
 }
 
-function materialCollapseKnowledgeNode(node: LinkTreeNode, seq: { n: number }): string {
+function materialCollapseKnowledgeNode(node: LinkTreeNode, openFolder: string, seq: { n: number }): string {
   const leaves: LinkTreeNode[] = []
   const branches: LinkTreeNode[] = []
   for (const child of node.children) {
@@ -972,13 +1047,25 @@ function materialCollapseKnowledgeNode(node: LinkTreeNode, seq: { n: number }): 
   const cards: MaterialCard[] = []
   if (!node.missing) cards.push({ name: leafName(node.id), id: node.id })
   for (const leaf of leaves) cards.push({ name: leafName(leaf.id), id: leaf.id, missing: leaf.missing })
-  const childrenHtml = branches.map((child) => materialCollapseKnowledgeNode(child, seq)).join('')
-  return materialCollapseRow(node.id, cards.length + branches.length, cards, childrenHtml, 'knowledge', seq)
+  const childrenHtml = branches
+    .map((child) => materialCollapseKnowledgeNode(child, openFolder, seq))
+    .join('')
+  const open = openFolder !== '' && (node.id === openFolder || node.children.some((child) => linkTreeHas(child, openFolder)))
+  return materialCollapseRow(
+    node.id,
+    cards.length + branches.length,
+    cards,
+    childrenHtml,
+    'knowledge',
+    seq,
+    node.id,
+    open,
+  )
 }
 
-function materialCollapseKnowledge(tree: LinkTree): string {
+function materialCollapseKnowledge(tree: LinkTree, openFolder: string): string {
   const seq = { n: 0 }
-  const roots = tree.roots.map((node) => materialCollapseKnowledgeNode(node, seq)).join('')
+  const roots = tree.roots.map((node) => materialCollapseKnowledgeNode(node, openFolder, seq)).join('')
   const unlinked =
     tree.unlinked.length === 0
       ? ''
@@ -989,6 +1076,8 @@ function materialCollapseKnowledge(tree: LinkTree): string {
           '',
           'knowledge',
           seq,
+          'Unlinked',
+          openFolder === 'Unlinked',
         )
   return `<div class="md-groups" data-shell="knowledge" data-library-panel="knowledge" hidden>${roots}${unlinked}</div>`
 }
@@ -997,6 +1086,7 @@ export function indexShellHtml(
   canvasIds: string[],
   tree?: LinkTree,
   waiting = 0,
+  openFolder = '',
 ): string {
   const n = canvasIds.length
   const countLabel = n === 1 ? '1 canvas' : `${n} canvases`
@@ -1007,7 +1097,7 @@ export function indexShellHtml(
   const list =
     n === 0
       ? `<p class="status empty-state" data-shell="index">No canvases yet. Agents add them over MCP.</p>`
-      : `${materialCollapseFolders(canvasIds, Boolean(tree))}${tree ? materialCollapseKnowledge(tree) : ''}`
+      : `${materialCollapseFolders(canvasIds, Boolean(tree), openFolder)}${tree ? materialCollapseKnowledge(tree, openFolder) : ''}`
 
   const scripts = `${n > 0 && tree ? `<script>${libraryToggleScript}</script>` : ''}${
     n > 0 ? `<script>${materialCollapseScript}</script>` : ''

@@ -1586,6 +1586,12 @@ export default function Index() {
     expect(styled.status).toBe(200)
     expect(await styled.text()).toBe(html)
 
+    const opened = await fetch(`${server.url}/?folder=team-canvas`)
+    expect(opened.status).toBe(200)
+    const openedHtml = await opened.text()
+    expect(openedHtml).toContain('data-folder="team-canvas" aria-expanded="true"')
+    expect(openedHtml).toContain('data-folder="guides" aria-expanded="false"')
+
     const broken: CanvasStore = {
       list: async () => ['team-canvas/index'],
       readSource: async () => {

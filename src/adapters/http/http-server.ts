@@ -136,6 +136,14 @@ export async function loadCanvasState(
   }
 }
 
+/** `?folder=` on the library. Empty, `.`, or `..` segments are ignored. */
+function openFolderQuery(url: string | undefined): string {
+  const value = new URL(url ?? '/', 'http://127.0.0.1').searchParams.get('folder') ?? ''
+  const parts = value.split('/')
+  if (value !== '' && parts.some((part) => part === '' || part === '.' || part === '..')) return ''
+  return value
+}
+
 function readRequestBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -479,7 +487,7 @@ export async function startHttpServer(
           const tree = ids.length === 0 ? undefined : await loadLinkTree(store)
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
           res.end(
-            indexShellHtml(ids, tree, waiting),
+            indexShellHtml(ids, tree, waiting, openFolderQuery(req.url)),
           )
           return
         }
