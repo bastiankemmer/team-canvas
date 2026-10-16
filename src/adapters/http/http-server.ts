@@ -478,7 +478,9 @@ export async function startHttpServer(
           // Empty library lists once and does not read sources.
           const tree = ids.length === 0 ? undefined : await loadLinkTree(store)
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-          res.end(indexShellHtml(ids, tree, waiting))
+          res.end(
+            indexShellHtml(ids, tree, waiting),
+          )
           return
         }
 

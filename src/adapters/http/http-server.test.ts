@@ -1567,15 +1567,24 @@ export default function Index() {
     })
     servers.push(server)
 
+    let html = ''
     for (const pathName of ['/', '/index.html']) {
       const res = await fetch(`${server.url}${pathName}`)
       expect(res.status).toBe(200)
-      const html = await res.text()
+      html = await res.text()
       expect(html).toContain('data-shell="index"')
-      expect(html).toContain('>team-canvas/index</summary>')
+      expect(html).toContain('team-canvas/')
       expect(html).toContain('data-missing="missing/gone"')
       expect(html).toContain('>missing<')
+      expect(html).toContain('aria-expanded="false"')
+      expect(html).not.toContain('<details')
+      expect(html).not.toContain('Library style')
+      expect(html).not.toContain('Fluent tree')
     }
+
+    const styled = await fetch(`${server.url}/?style=fluent`)
+    expect(styled.status).toBe(200)
+    expect(await styled.text()).toBe(html)
 
     const broken: CanvasStore = {
       list: async () => ['team-canvas/index'],

@@ -174,7 +174,7 @@ main.edit-main {
 .library-view {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.5rem;
   align-self: center;
 }
 .library-view .btn[aria-pressed="true"] {
@@ -290,67 +290,12 @@ label.btn:focus-visible {
   filter: none;
   pointer-events: none;
 }
-.canvas-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-  gap: 0.85rem;
-}
-.canvas-list > li:has(> details) { grid-column: 1 / -1; }
-.canvas-row {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 8.5rem;
-  padding: 1.15rem 1.2rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  transition: border-color var(--ease), background var(--ease);
-}
-.canvas-row:hover {
-  border-color: var(--muted);
-  background: var(--surface-hover);
-}
-.canvas-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  min-width: 0;
-}
-.canvas-id {
-  font-weight: 650;
-  font-size: 1.05rem;
-  letter-spacing: -0.025em;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.canvas-file {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .canvas-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   margin-top: auto;
-}
-details > .canvas-file {
-  display: block;
-  margin: 0.2rem 0 0 1.35rem;
-}
-details > .canvas-actions {
-  margin: 0.55rem 0 0.75rem 1.35rem;
 }
 .copy-feedback {
   font-size: 0.75rem;
@@ -487,6 +432,178 @@ details > .canvas-actions {
   }
 }
 a { color: var(--accent); }
+
+/* Nested collapsible folders. Scoped to the library groups so settlement stays plain. */
+.md-groups {
+  --md-text: #1c1b1f;
+  --md-muted: #49454f;
+  --md-surface: #fffbfe;
+  --md-outline: #79747e;
+  --md-primary: #6750a4;
+  --md-primary-hover: #5b458f;
+  --md-on-primary: #ffffff;
+  --chevron-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M6 4l4 4-4 4'/%3E%3C/svg%3E");
+  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  display: flex;
+  flex-direction: column;
+}
+.md-groups > .md-group + .md-group { margin-top: 1.75rem; }
+.md-groups .md-path {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.md-groups .md-count {
+  color: var(--md-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.md-groups .md-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr));
+  gap: 0.75rem;
+  align-items: stretch;
+}
+.md-groups .md-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  height: 100%;
+  padding: 1rem;
+  background: var(--md-surface);
+  border: 1px solid var(--md-outline);
+  border-radius: 12px;
+  box-shadow: none;
+}
+.md-groups .md-overline {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  color: var(--md-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.md-groups .md-title,
+.md-groups a.md-title {
+  margin: 0;
+  color: var(--md-text);
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.006em;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.md-groups a.md-title:hover { text-decoration: underline; }
+.md-groups .md-file {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--md-muted);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: anywhere;
+}
+.md-groups .md-card .canvas-actions { margin-top: auto; gap: 0.5rem; }
+.md-groups .btn {
+  border-radius: 999px;
+  height: 2rem;
+  font-size: 0.8125rem;
+}
+.md-groups .btn-primary {
+  background: var(--md-primary);
+  border-color: transparent;
+  color: var(--md-on-primary);
+}
+.md-groups .btn-primary:hover {
+  background: var(--md-primary-hover);
+  border-color: transparent;
+  color: var(--md-on-primary);
+}
+.md-groups .md-disclosure {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.5rem;
+  margin: 0;
+  padding: 0.2rem 0.35rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--md-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.md-groups .md-disclosure:hover {
+  background: color-mix(in srgb, var(--md-primary) 10%, transparent);
+}
+.md-groups .md-disclosure:focus-visible {
+  outline: 2px solid var(--md-primary);
+  outline-offset: 2px;
+}
+.md-groups .md-chevron {
+  flex: 0 0 1.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  background-color: currentColor;
+  -webkit-mask: var(--chevron-right) center / 0.85rem 0.85rem no-repeat;
+  mask: var(--chevron-right) center / 0.85rem 0.85rem no-repeat;
+}
+.md-groups .md-disclosure[aria-expanded="true"] .md-chevron {
+  -webkit-mask-image: var(--chevron-down);
+  mask-image: var(--chevron-down);
+}
+.md-groups .md-disclosure .md-path {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.md-groups .md-disclosure .md-count {
+  margin-left: auto;
+}
+.md-groups .md-subheader {
+  display: block;
+  margin: 0;
+}
+.md-groups .md-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+.md-groups .md-panel[hidden] {
+  display: none !important;
+}
+.md-groups .md-children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-left: 1.25rem;
+}
+.md-groups .md-children .md-group {
+  margin-top: 0;
+}
+@media (prefers-color-scheme: dark) {
+  .md-groups {
+    --md-text: #e6e1e5;
+    --md-muted: #cac4d0;
+    --md-surface: #1c1b1f;
+    --md-outline: #938f99;
+    --md-primary: #d0bcff;
+    --md-primary-hover: #e8def8;
+    --md-on-primary: #381e72;
+  }
+}
 `.trim()
 
 const canvasPathJs = `function canvasPath(id){return String(id).split("/").map(function(part){return encodeURIComponent(part)}).join("/")}`
@@ -532,6 +649,18 @@ const libraryToggleScript = `(function () {
       buttons.forEach(function (other) {
         other.setAttribute("aria-pressed", other === btn ? "true" : "false");
       });
+    });
+  });
+})();`
+
+const materialCollapseScript = `(function () {
+  document.querySelectorAll(".md-disclosure").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var panel = document.getElementById(btn.getAttribute("aria-controls") || "");
+      if (!panel) return;
+      var open = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      panel.hidden = !open;
     });
   });
 })();`
@@ -681,61 +810,11 @@ function canvasActionsHtml(id: string): string {
   </div>`
 }
 
-function canvasRowHtml(name: string, id: string): string {
-  const safeName = escapeHtml(name)
-  return `<li class="canvas-row">
-  <div class="canvas-card-body">
-    <span class="canvas-id" title="${safeName}">${safeName}</span>
-    <span class="canvas-file">${safeName}.canvas.tsx</span>
-  </div>
-  ${canvasActionsHtml(id)}
-</li>`
-}
-
-function missingCanvasHtml(id: string): string {
-  const safe = escapeHtml(id)
-  return `<li class="canvas-row" data-missing="${safe}">
-  <div class="canvas-card-body">
-    <span class="canvas-id" title="${safe}">${safe}</span>
-    <span class="canvas-file">missing</span>
-  </div>
-</li>`
-}
-
-/** Branch summary is the id only. Actions sit outside it so they do not toggle the disclosure. */
-function knowledgeNodeHtml(node: LinkTreeNode, open: boolean): string {
-  if (node.missing) return missingCanvasHtml(node.id)
-  if (node.children.length === 0) return canvasRowHtml(node.id, node.id)
-  const safe = escapeHtml(node.id)
-  const kids = node.children.map((child) => knowledgeNodeHtml(child, false)).join('')
-  return `<li><details${open ? ' open' : ''}><summary class="canvas-id">${safe}</summary><span class="canvas-file">${safe}.canvas.tsx</span>${canvasActionsHtml(node.id)}<ul class="canvas-list">${kids}</ul></details></li>`
-}
-
-function knowledgePanelHtml(tree: LinkTree): string {
-  const roots = tree.roots.map((node) => knowledgeNodeHtml(node, true)).join('')
-  const unlinked =
-    tree.unlinked.length === 0
-      ? ''
-      : `<li><details${tree.roots.length === 0 ? ' open' : ''}><summary class="canvas-id">Unlinked</summary><ul class="canvas-list">${tree.unlinked.map((id) => canvasRowHtml(id, id)).join('')}</ul></details></li>`
-  return `<ul class="canvas-list" data-shell="knowledge" data-library-panel="knowledge" hidden>${roots}${unlinked}</ul>`
-}
-
 const libraryToggleHtml = `<div class="library-view" role="group" aria-label="Library view">
   <button type="button" class="btn" data-library-toggle="folders" aria-pressed="true">Folders</button>
   <button type="button" class="btn" data-library-toggle="knowledge" aria-pressed="false">Knowledge</button>
 </div>`
 
-function libraryNodesHtml(nodes: LibraryNode[]): string {
-  return nodes
-    .map((node) => {
-      if (node.kind === 'canvas') return canvasRowHtml(node.name, node.id)
-      const safe = escapeHtml(node.name)
-      return `<li><details><summary class="canvas-id">${safe}</summary><ul class="canvas-list">${libraryNodesHtml(node.children)}</ul></details></li>`
-    })
-    .join('')
-}
-
-/** Index: upload + library from stored canvas ids. A tree adds the Knowledge panel. */
 /** Decision cards: a human settles each contested topic by picking one agent's plan. */
 export function settlementShellHtml(topics: TopicView[]): string {
   const rank: Record<TopicView['status'], number> = { escalated: 0, open: 1, settled: 2 }
@@ -796,28 +875,145 @@ function waitingLink(waiting: number): string {
   return ` · <a href="/settlement">${waiting} decision${waiting === 1 ? '' : 's'} waiting</a>`
 }
 
-export function indexShellHtml(canvasIds: string[], tree?: LinkTree, waiting = 0): string {
+type MaterialCard = { name: string; id: string; missing?: boolean }
+
+function materialCard(card: MaterialCard, overline: string): string {
+  const safeOver = escapeHtml(overline)
+  const safeName = escapeHtml(card.name)
+  const safeId = escapeHtml(card.id)
+  if (card.missing) {
+    return `<article class="md-card" data-missing="${safeId}"><p class="md-overline">${safeOver}</p><p class="md-title">${safeName}</p><p class="md-file">missing</p></article>`
+  }
+  const href = `/canvas/${canvasPath(card.id)}`
+  return `<article class="md-card"><p class="md-overline">${safeOver}</p><a class="md-title" href="${href}">${safeName}</a><p class="md-file">${safeId}.canvas.tsx</p>${canvasActionsHtml(card.id)}</article>`
+}
+
+function cardFolder(id: string): string {
+  const cut = id.lastIndexOf('/')
+  return cut < 0 ? 'root' : id.slice(0, cut)
+}
+
+function leafName(id: string): string {
+  const cut = id.lastIndexOf('/')
+  return cut < 0 ? id : id.slice(cut + 1)
+}
+
+function splitLibrary(nodes: readonly LibraryNode[]): {
+  canvases: Extract<LibraryNode, { kind: 'canvas' }>[]
+  folders: Extract<LibraryNode, { kind: 'folder' }>[]
+} {
+  const canvases: Extract<LibraryNode, { kind: 'canvas' }>[] = []
+  const folders: Extract<LibraryNode, { kind: 'folder' }>[] = []
+  for (const node of nodes) {
+    if (node.kind === 'canvas') canvases.push(node)
+    else folders.push(node)
+  }
+  return { canvases, folders }
+}
+
+/** One tree level. Child folder rows sit in the open panel, not as sibling path chunks. */
+function materialCollapseRow(
+  label: string,
+  count: number,
+  cards: MaterialCard[],
+  childrenHtml: string,
+  shell: 'index' | 'knowledge',
+  seq: { n: number },
+): string {
+  const panelId = `md-${shell}-${seq.n}`
+  seq.n += 1
+  const grid =
+    cards.length === 0
+      ? ''
+      : `<div class="md-grid">${cards.map((card) => materialCard(card, cardFolder(card.id))).join('')}</div>`
+  const kids = childrenHtml === '' ? '' : `<div class="md-children">${childrenHtml}</div>`
+  return `<section class="md-group"><h2 class="md-subheader"><button type="button" class="md-disclosure" aria-expanded="false" aria-controls="${panelId}"><span class="md-chevron" aria-hidden="true"></span><span class="md-path">${escapeHtml(label)}</span><span class="md-count">${count}</span></button></h2><div class="md-panel" id="${panelId}" hidden>${grid}${kids}</div></section>`
+}
+
+function materialCollapseFolder(node: Extract<LibraryNode, { kind: 'folder' }>, seq: { n: number }): string {
+  const { canvases, folders } = splitLibrary(node.children)
+  const childrenHtml = folders.map((folder) => materialCollapseFolder(folder, seq)).join('')
+  return materialCollapseRow(
+    `${node.name}/`,
+    canvases.length + folders.length,
+    canvases.map((canvas) => ({ name: canvas.name, id: canvas.id })),
+    childrenHtml,
+    'index',
+    seq,
+  )
+}
+
+function materialCollapseFolders(ids: readonly string[], withPanel: boolean): string {
+  const { canvases, folders } = splitLibrary(libraryTree([...ids]))
+  const seq = { n: 0 }
+  const root =
+    canvases.length === 0
+      ? ''
+      : materialCollapseRow(
+          'root/',
+          canvases.length,
+          canvases.map((canvas) => ({ name: canvas.name, id: canvas.id })),
+          '',
+          'index',
+          seq,
+        )
+  const body = folders.map((folder) => materialCollapseFolder(folder, seq)).join('')
+  const panelAttr = withPanel ? ' data-library-panel="folders"' : ''
+  return `<div class="md-groups" data-shell="index"${panelAttr}>${root}${body}</div>`
+}
+
+function materialCollapseKnowledgeNode(node: LinkTreeNode, seq: { n: number }): string {
+  const leaves: LinkTreeNode[] = []
+  const branches: LinkTreeNode[] = []
+  for (const child of node.children) {
+    if (!child.missing && child.children.length > 0) branches.push(child)
+    else leaves.push(child)
+  }
+  const cards: MaterialCard[] = []
+  if (!node.missing) cards.push({ name: leafName(node.id), id: node.id })
+  for (const leaf of leaves) cards.push({ name: leafName(leaf.id), id: leaf.id, missing: leaf.missing })
+  const childrenHtml = branches.map((child) => materialCollapseKnowledgeNode(child, seq)).join('')
+  return materialCollapseRow(node.id, cards.length + branches.length, cards, childrenHtml, 'knowledge', seq)
+}
+
+function materialCollapseKnowledge(tree: LinkTree): string {
+  const seq = { n: 0 }
+  const roots = tree.roots.map((node) => materialCollapseKnowledgeNode(node, seq)).join('')
+  const unlinked =
+    tree.unlinked.length === 0
+      ? ''
+      : materialCollapseRow(
+          'Unlinked',
+          tree.unlinked.length,
+          tree.unlinked.map((id) => ({ name: leafName(id), id })),
+          '',
+          'knowledge',
+          seq,
+        )
+  return `<div class="md-groups" data-shell="knowledge" data-library-panel="knowledge" hidden>${roots}${unlinked}</div>`
+}
+
+export function indexShellHtml(
+  canvasIds: string[],
+  tree?: LinkTree,
+  waiting = 0,
+): string {
   const n = canvasIds.length
   const countLabel = n === 1 ? '1 canvas' : `${n} canvases`
-  const folders = libraryNodesHtml(libraryTree(canvasIds))
-  const list =
-    n === 0
-      ? `<p class="status empty-state" data-shell="index">No canvases yet. Agents add them over MCP.</p>`
-      : tree
-        ? `<ul class="canvas-list" data-shell="index" data-library-panel="folders">${folders}</ul>${knowledgePanelHtml(tree)}`
-        : `<ul class="canvas-list" data-shell="index">${folders}</ul>`
-
   const hero = `<header class="library-hero">
   <h1 class="library-title">Canvases</h1>
   <p class="library-meta">${escapeHtml(countLabel)}${waitingLink(waiting)}</p>${n > 0 && tree ? libraryToggleHtml : ''}
 </header>`
+  const list =
+    n === 0
+      ? `<p class="status empty-state" data-shell="index">No canvases yet. Agents add them over MCP.</p>`
+      : `${materialCollapseFolders(canvasIds, Boolean(tree))}${tree ? materialCollapseKnowledge(tree) : ''}`
 
-  const scripts = `${
-    n > 0 && tree ? `<script>${libraryToggleScript}</script>` : ''
+  const scripts = `${n > 0 && tree ? `<script>${libraryToggleScript}</script>` : ''}${
+    n > 0 ? `<script>${materialCollapseScript}</script>` : ''
   }<script>${copyShareScript}</script>`
 
-  const body = `<div class="library">${hero}${list}</div>`
-  return page('Canvases', body, '', scripts, '')
+  return page('Canvases', `<div class="library">${hero}${list}</div>`, '', scripts, '')
 }
 
 export type ViewerPayload =

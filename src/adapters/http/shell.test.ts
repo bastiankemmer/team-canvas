@@ -132,53 +132,47 @@ describe("host-ui shell HTML markers", () => {
       url: "http://canvas.test/",
     });
     const doc = dom.window.document;
-    const root = doc.querySelector('ul[data-shell="index"]');
-    expect(root).toBeTruthy();
+    const root = doc.querySelector('.md-groups[data-shell="index"]')!;
+    const rows = () => [...root.querySelectorAll(":scope > .md-group")];
+    const pathOf = (row: Element) => row.querySelector(":scope > .md-subheader .md-path")?.textContent;
 
-    const labels = (list: Element) =>
-      [...list.children].map((li) => {
-        const details = [...li.children].find((el) => el.tagName === "DETAILS");
-        if (details) {
-          const summary = [...details.children].find((el) => el.tagName === "SUMMARY");
-          return summary?.textContent ?? "";
-        }
-        return li.querySelector(".canvas-id")?.textContent ?? "";
-      });
-
-    expect(labels(root!)).toEqual(["guides", "index", "reference"]);
+    expect(rows().map(pathOf)).toEqual(["root/", "guides/", "reference/"]);
     expect(doc.querySelector(".library-meta")?.textContent).toBe("3 canvases");
+    expect(doc.querySelector("details")).toBeNull();
+    expect([...doc.querySelectorAll("a")].map((a) => a.getAttribute("href"))).not.toContain("/canvas/guides");
 
-    const guides = root!.children[0]!;
-    const reference = root!.children[2]!;
-    expect(guides.querySelector("details")).toBeTruthy();
-    expect(guides.classList.contains("canvas-row")).toBe(false);
-    expect(reference.querySelector("details")).toBeTruthy();
-    expect(labels(guides.querySelector("details > ul")!)).toEqual(["editing-workflow"]);
-    expect(labels(reference.querySelector("details > ul")!)).toEqual(["http-api"]);
+    const guides = rows()[1]!;
+    guides.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    expect([...guides.querySelectorAll(":scope > .md-panel > .md-grid .md-title")].map((el) => el.textContent)).toEqual([
+      "editing-workflow",
+    ]);
+    expect(guides.querySelector('.canvas-actions a[href="/canvas/guides/editing-workflow"]')?.textContent).toBe("Open");
+    expect(guides.querySelector('a[href="/canvas/guides/editing-workflow/edit"]')?.textContent).toBe("Code");
 
-    const indexRow = root!.children[1]!;
-    expect(indexRow.classList.contains("canvas-row")).toBe(true);
-    expect(indexRow.querySelector("a")?.getAttribute("href")).toBe("/canvas/index");
+    const indexRow = rows()[0]!;
+    indexRow.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    expect(indexRow.querySelector("a.md-title")?.getAttribute("href")).toBe("/canvas/index");
     expect(indexRow.querySelector('a[href="/canvas/index/edit"]')?.textContent).toBe("Code");
 
-    const nested = guides.querySelector(".canvas-row")!;
-    expect(nested.querySelector('a[href="/canvas/guides/editing-workflow"]')?.textContent).toBe("Open");
-    expect(nested.querySelector('a[href="/canvas/guides/editing-workflow/edit"]')?.textContent).toBe("Code");
-    expect([...doc.querySelectorAll("a")].map((a) => a.getAttribute("href"))).not.toContain("/canvas/guides");
-    expect([...doc.querySelectorAll("summary")].map((s) => s.textContent)).toEqual(["guides", "reference"]);
-    expect([...doc.querySelectorAll(".canvas-row .canvas-id")].map((el) => el.textContent)).toEqual([
-      "editing-workflow",
-      "index",
-      "http-api",
-    ]);
+    const reference = rows()[2]!;
+    reference.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    expect(reference.querySelector(".md-title")?.textContent).toBe("http-api");
 
-    const flat = new JSDOM(indexShellHtml(["index"])).window.document;
+    const flat = new JSDOM(indexShellHtml(["index"]), {
+      runScripts: "dangerously",
+      url: "http://canvas.test/",
+    }).window.document;
     expect(flat.querySelector("details")).toBeNull();
+    expect(flat.querySelector(".md-path")?.textContent).toBe("root/");
 
-    const sorted = new JSDOM(indexShellHtml(["ref/z", "ref/a", "aaa"])).window.document;
-    const sortedRoot = sorted.querySelector('ul[data-shell="index"]')!;
-    expect(labels(sortedRoot)).toEqual(["aaa", "ref"]);
-    expect(labels(sortedRoot.children[1]!.querySelector("details > ul")!)).toEqual(["a", "z"]);
+    const sorted = new JSDOM(indexShellHtml(["ref/z", "ref/a", "aaa"]), {
+      runScripts: "dangerously",
+      url: "http://canvas.test/",
+    }).window.document;
+    const sortedRows = [...sorted.querySelectorAll('.md-groups[data-shell="index"] > .md-group')];
+    expect(sortedRows.map((row) => row.querySelector(".md-path")?.textContent)).toEqual(["root/", "ref/"]);
+    sortedRows[1]!.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    expect([...sortedRows[1]!.querySelectorAll(".md-title")].map((el) => el.textContent)).toEqual(["a", "z"]);
 
     const spacedHtml = indexShellHtml(["guides/bill ing"]);
     expect(spacedHtml).toContain('href="/canvas/guides/bill%20ing"');
@@ -296,18 +290,11 @@ describe("host-ui shell HTML markers", () => {
       url: "http://canvas.test/",
     });
     const doc = dom.window.document;
-    const itemLabel = (li: Element) => {
-      const details = [...li.children].find((el) => el.tagName === "DETAILS");
-      if (details) {
-        return [...details.children].find((el) => el.tagName === "SUMMARY")?.textContent ?? "";
-      }
-      return li.querySelector(".canvas-id")?.textContent ?? "";
-    };
     const shown = () =>
       [...doc.querySelectorAll("[data-library-panel]")].filter((panel) => !panel.hasAttribute("hidden"));
 
-    const folders = doc.querySelector('ul[data-shell="index"]')!;
-    const knowledge = doc.querySelector('ul[data-shell="knowledge"]')!;
+    const folders = doc.querySelector('.md-groups[data-shell="index"]')!;
+    const knowledge = doc.querySelector('.md-groups[data-shell="knowledge"]')!;
     const foldersBtn = doc.querySelector<HTMLButtonElement>('[data-library-toggle="folders"]')!;
     const knowledgeBtn = doc.querySelector<HTMLButtonElement>('[data-library-toggle="knowledge"]')!;
     const heroKids = [...doc.querySelector(".library-hero")!.children];
@@ -332,7 +319,7 @@ describe("host-ui shell HTML markers", () => {
     expect(indexShellHtml(ids)).not.toContain("data-library-toggle");
     expect(indexShellHtml(ids)).not.toContain('data-shell="knowledge"');
     expect(plain.querySelector(".library-meta")?.nextSibling?.textContent?.trim() ?? "").toBe("");
-    expect(folders.innerHTML).toBe(plain.querySelector('ul[data-shell="index"]')!.innerHTML);
+    expect(folders.innerHTML).toBe(plain.querySelector('.md-groups[data-shell="index"]')!.innerHTML);
 
     const empty = indexShellHtml([]);
     expect(empty).toContain("No canvases yet");
@@ -351,65 +338,37 @@ describe("host-ui shell HTML markers", () => {
       new JSDOM(zeroWithTree).window.document.querySelector(".library-meta")?.nextSibling?.textContent?.trim() ?? "",
     ).toBe("");
 
-    expect([...knowledge.children].map(itemLabel)).toEqual([
-      "team-canvas/index",
-      "proj/index",
-      "solo/index",
-      "Unlinked",
+    const kRows = () => [...knowledge.querySelectorAll(":scope > .md-group")];
+    const kLabel = (row: Element) => row.querySelector(":scope > .md-subheader .md-path")?.textContent;
+    expect(kRows().map(kLabel)).toEqual(["team-canvas/index", "proj/index", "solo/index", "Unlinked"]);
+    expect(knowledge.innerHTML).toContain(knowledge.children[0]!.outerHTML + knowledge.children[1]!.outerHTML);
+    const team = kRows()[0]!;
+    const teamBtn = team.querySelector<HTMLButtonElement>(":scope > .md-subheader .md-disclosure")!;
+    expect(teamBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(teamBtn.querySelector("a")).toBeNull();
+    const branch = team.querySelector(":scope > .md-panel > .md-children > .md-group")!;
+    const branchBtn = branch.querySelector<HTMLButtonElement>(".md-disclosure")!;
+    expect(branchBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(branchBtn.querySelector(".md-path")?.textContent).toBe("guides/bill ing");
+    expect(branchBtn.querySelector("a")).toBeNull();
+
+    const solo = kRows()[2]!;
+    solo.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    expect(solo.querySelector(".md-file")?.textContent).toBe("solo/index.canvas.tsx");
+
+    const unlinked = kRows()[3]!;
+    const unlinkedBtn = unlinked.querySelector<HTMLButtonElement>(".md-disclosure")!;
+    expect(unlinkedBtn.getAttribute("aria-expanded")).toBe("false");
+    unlinkedBtn.click();
+    expect(unlinked.querySelector(".md-file")?.textContent).toBe("notes/loose.canvas.tsx");
+
+    const proj = kRows()[1]!;
+    proj.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    expect([...proj.querySelectorAll(".md-file")].map((el) => el.textContent)).toEqual([
+      "proj/index.canvas.tsx",
+      "m/two.canvas.tsx",
+      "m/one.canvas.tsx",
     ]);
-    expect(knowledge.innerHTML).toContain(
-      knowledge.children[0]!.outerHTML + knowledge.children[1]!.outerHTML,
-    );
-    const team = [...knowledge.children].find((li) => itemLabel(li) === "team-canvas/index")!;
-    const teamDetails = team.querySelector("details") as HTMLDetailsElement;
-    expect(teamDetails.hasAttribute("open")).toBe(true);
-    expect(teamDetails.querySelector("summary")?.textContent).toBe("team-canvas/index");
-    expect(teamDetails.querySelector("summary")?.querySelector("a, button")).toBeNull();
-    expect(
-      [...teamDetails.children].find((el) => el.classList.contains("canvas-file"))?.textContent,
-    ).toBe("team-canvas/index.canvas.tsx");
-    const teamKids = teamDetails.querySelector("ul")!;
-    expect([...teamKids.children].map(itemLabel)).toEqual([
-      "guides/bill ing",
-      "z/late",
-      "gone/topic",
-    ]);
-    expect(teamKids.innerHTML).toContain(
-      teamKids.children[0]!.outerHTML + teamKids.children[1]!.outerHTML,
-    );
-
-    const branch = teamKids.children[0]!.querySelector("details") as HTMLDetailsElement;
-    expect(branch.hasAttribute("open")).toBe(false);
-    expect(branch.querySelector("summary")?.textContent).toBe("guides/bill ing");
-    expect(branch.querySelector("summary")?.querySelector("a, button")).toBeNull();
-    expect(
-      [...branch.children].find((el) => el.classList.contains("canvas-file"))?.textContent,
-    ).toBe("guides/bill ing.canvas.tsx");
-    expect([...branch.querySelector("ul")!.children].map(itemLabel)).toEqual(["reference/http-api"]);
-
-    const leaf = teamKids.children[1]!;
-    expect(leaf.classList.contains("canvas-row")).toBe(true);
-    expect(leaf.querySelector("details")).toBeNull();
-    expect(leaf.querySelector(".canvas-id")?.textContent).toBe("z/late");
-    expect(leaf.querySelector(".canvas-file")?.textContent).toBe("z/late.canvas.tsx");
-
-    const solo = [...knowledge.children].find((li) => itemLabel(li) === "solo/index")!;
-    expect(solo.classList.contains("canvas-row")).toBe(true);
-    expect(solo.querySelector("details")).toBeNull();
-    expect(solo.querySelector(".canvas-file")?.textContent).toBe("solo/index.canvas.tsx");
-
-    const broken = knowledge.querySelector('[data-missing="gone/topic"]')!;
-    expect(broken.querySelector(".canvas-id")?.textContent).toBe("gone/topic");
-    expect(broken.querySelector(".canvas-file")?.textContent).toBe("missing");
-    expect(broken.querySelector("a, button")).toBeNull();
-
-    const unlinked = [...knowledge.children].find((li) => itemLabel(li) === "Unlinked")!;
-    const unlinkedDetails = unlinked.querySelector("details") as HTMLDetailsElement;
-    expect(unlinkedDetails.hasAttribute("open")).toBe(false);
-    expect([...unlinkedDetails.querySelector("ul")!.children].map(itemLabel)).toEqual(["notes/loose"]);
-
-    const proj = [...knowledge.children].find((li) => itemLabel(li) === "proj/index")!;
-    expect([...proj.querySelector("details ul")!.children].map(itemLabel)).toEqual(["m/two", "m/one"]);
 
     const actions = (root: ParentNode, id: string) =>
       root.querySelector(`[data-copy-share="${id}"]`)?.closest(".canvas-actions")?.innerHTML;
@@ -444,21 +403,32 @@ describe("host-ui shell HTML markers", () => {
       },
     });
 
-    const branchActions = [...branch.children].find((el) => el.classList.contains("canvas-actions"))!;
-    expect(branch.querySelector("summary")?.contains(branchActions)).toBe(false);
+    const branchActions = branch.querySelector(".canvas-actions")!;
+    expect(branchBtn.contains(branchActions)).toBe(false);
     branchActions.querySelector("button")!.click();
-    expect(branch.open).toBe(false);
+    expect(branchBtn.getAttribute("aria-expanded")).toBe("false");
     expect(copied).toBe("http://canvas.test/canvas/guides/bill%20ing");
     const branchOpen = branchActions.querySelector("a")!;
     branchOpen.addEventListener("click", (event) => event.preventDefault());
     branchOpen.click();
-    expect(branch.open).toBe(false);
-    const teamOpen = [...teamDetails.children]
-      .find((el) => el.classList.contains("canvas-actions"))!
-      .querySelector("a")!;
+    expect(branchBtn.getAttribute("aria-expanded")).toBe("false");
+    teamBtn.click();
+    const teamPanel = doc.getElementById(teamBtn.getAttribute("aria-controls") ?? "")!;
+    expect([...teamPanel.querySelectorAll(":scope > .md-grid .md-file")].map((el) => el.textContent)).toEqual([
+      "team-canvas/index.canvas.tsx",
+      "z/late.canvas.tsx",
+      "missing",
+    ]);
+    const broken = teamPanel.querySelector('[data-missing="gone/topic"]')!;
+    expect(broken.querySelector(".md-title")?.textContent).toBe("topic");
+    expect(broken.querySelector(".md-file")?.textContent).toBe("missing");
+    expect(broken.querySelector("a, button")).toBeNull();
+    branchBtn.click();
+    expect(branch.querySelector(".md-grid")?.textContent).toContain("reference/http-api.canvas.tsx");
+    const teamOpen = teamPanel.querySelector(":scope > .md-grid .canvas-actions a")!;
     teamOpen.addEventListener("click", (event) => event.preventDefault());
     teamOpen.click();
-    expect(teamDetails.open).toBe(true);
+    expect(teamBtn.getAttribute("aria-expanded")).toBe("true");
 
     knowledgeBtn.click();
     expect(shown()).toEqual([knowledge]);
@@ -480,19 +450,19 @@ describe("host-ui shell HTML markers", () => {
       runScripts: "dangerously",
       url: "http://canvas.test/",
     }).window.document;
-    const looseKnowledge = looseDoc.querySelector('ul[data-shell="knowledge"]')!;
-    const looseDetails = looseKnowledge.querySelector("details") as HTMLDetailsElement;
+    const looseKnowledge = looseDoc.querySelector('.md-groups[data-shell="knowledge"]')!;
+    const looseBtn = looseKnowledge.querySelector<HTMLButtonElement>(".md-disclosure")!;
     expect(looseDoc.querySelector('[data-library-toggle="folders"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(looseKnowledge.hasAttribute("hidden")).toBe(true);
-    expect(looseDetails.hasAttribute("open")).toBe(true);
-    expect(looseDetails.querySelector("summary")?.textContent).toBe("Unlinked");
+    expect(looseBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(looseBtn.querySelector(".md-path")?.textContent).toBe("Unlinked");
     looseDoc.querySelector<HTMLButtonElement>('[data-library-toggle="knowledge"]')!.click();
     expect(looseKnowledge.hasAttribute("hidden")).toBe(false);
-    expect(looseDetails.open).toBe(true);
-    expect([...looseDetails.querySelector("ul")!.children].map(itemLabel)).toEqual(["b", "a"]);
-    const looseRows = looseDetails.querySelector("ul")!;
-    expect(looseRows.innerHTML).toBe(looseRows.children[0]!.outerHTML + looseRows.children[1]!.outerHTML);
-    expect(looseDetails.querySelector(".canvas-row a")?.textContent).toBe("Open");
+    looseBtn.click();
+    const looseCards = [...looseKnowledge.querySelectorAll(".md-card")];
+    expect(looseCards.map((card) => card.querySelector(".md-title")?.textContent)).toEqual(["b", "a"]);
+    expect(looseKnowledge.querySelector(".md-grid")!.innerHTML).toBe(looseCards[0]!.outerHTML + looseCards[1]!.outerHTML);
+    expect(looseKnowledge.querySelector(".canvas-actions a")?.textContent).toBe("Open");
 
     const linkedOnly = indexShellHtml(["proj/index", "index"], {
       roots: [
@@ -511,10 +481,108 @@ describe("host-ui shell HTML markers", () => {
     const linkedKnowledge = new JSDOM(linkedOnly, {
       runScripts: "dangerously",
       url: "http://canvas.test/",
-    }).window.document.querySelector('ul[data-shell="knowledge"]')!;
+    }).window.document.querySelector('.md-groups[data-shell="knowledge"]')!;
     expect(linkedKnowledge.textContent ?? "").not.toContain("Unlinked");
     expect(linkedKnowledge.innerHTML).toBe([...linkedKnowledge.children].map((el) => el.outerHTML).join(""));
     expect(linkedOnly).toContain("data-library-toggle");
+  });
+
+  it("library is nested collapsible folders with no style switch", () => {
+    const ids = ["index", "team-canvas/index", "team-canvas/reference/chunking"];
+    const collapse = indexShellHtml(ids);
+    const cdom = new JSDOM(collapse, { runScripts: "dangerously", url: "http://canvas.test/" }).window.document;
+    expect(collapse).not.toContain("data-library-style");
+    expect(collapse).not.toContain("Library style");
+    expect(collapse).not.toContain("Fluent tree");
+    expect(collapse).not.toContain("Bootstrap sections");
+    expect(collapse).not.toContain("Material groups");
+    expect(collapse).toContain("margin-left: 1.25rem");
+    expect(cdom.querySelector('[data-shell="index"] details, [data-shell="index"] .canvas-list')).toBeNull();
+    const indexRoot = cdom.querySelector('.md-groups[data-shell="index"]')!;
+    const topRows = [...indexRoot.querySelectorAll(":scope > .md-group")];
+    expect(topRows.map((row) => row.querySelector(":scope > .md-subheader .md-path")?.textContent)).toEqual([
+      "root/",
+      "team-canvas/",
+    ]);
+    const disclosures = [...cdom.querySelectorAll<HTMLButtonElement>(".md-disclosure")];
+    expect(disclosures.every((btn) => btn.getAttribute("aria-expanded") === "false")).toBe(true);
+    expect([...cdom.querySelectorAll(".md-panel")].every((panel) => panel.hasAttribute("hidden"))).toBe(true);
+    const team = topRows[1]!;
+    expect(team.querySelector(":scope > .md-subheader .md-count")?.textContent).toBe("2");
+    const teamBtn = team.querySelector<HTMLButtonElement>(":scope > .md-subheader .md-disclosure")!;
+    const ref = team.querySelector(":scope > .md-panel > .md-children > .md-group")!;
+    expect(ref.querySelector(".md-path")?.textContent).toBe("reference/");
+    expect(indexRoot.querySelectorAll(":scope > .md-group")).toHaveLength(2);
+    teamBtn.click();
+    expect(teamBtn.getAttribute("aria-expanded")).toBe("true");
+    const teamPanel = cdom.getElementById(teamBtn.getAttribute("aria-controls") ?? "");
+    expect(teamPanel?.hasAttribute("hidden")).toBe(false);
+    expect(teamPanel?.querySelector(":scope > .md-grid .md-overline")?.textContent).toBe("team-canvas");
+    expect(teamPanel?.querySelector(":scope > .md-grid .md-file")?.textContent).toBe("team-canvas/index.canvas.tsx");
+    expect(teamPanel?.querySelector(':scope > .md-grid .canvas-actions a[href="/canvas/team-canvas/index"]')?.textContent).toBe("Open");
+    expect(teamPanel?.querySelector(":scope > .md-grid")?.textContent).not.toContain("chunking");
+    const refBtn = ref.querySelector<HTMLButtonElement>(".md-disclosure")!;
+    expect(refBtn.getAttribute("aria-expanded")).toBe("false");
+    refBtn.click();
+    expect(teamBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(refBtn.getAttribute("aria-expanded")).toBe("true");
+    const refPanel = cdom.getElementById(refBtn.getAttribute("aria-controls") ?? "");
+    expect(refPanel?.querySelector(".md-overline")?.textContent).toBe("team-canvas/reference");
+    expect(refPanel?.querySelector(".md-file")?.textContent).toBe("team-canvas/reference/chunking.canvas.tsx");
+
+    const folderOnly = indexShellHtml(["parent/child/leaf"]);
+    const folderDom = new JSDOM(folderOnly, { runScripts: "dangerously", url: "http://canvas.test/" }).window.document;
+    const parentRow = folderDom.querySelector(".md-group")!;
+    expect(parentRow.querySelector(".md-path")?.textContent).toBe("parent/");
+    expect(parentRow.querySelector(".md-count")?.textContent).toBe("1");
+    expect(parentRow.querySelector(":scope > .md-panel > .md-grid")).toBeNull();
+    parentRow.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    const childRow = parentRow.querySelector(":scope > .md-panel > .md-children > .md-group")!;
+    expect(childRow.querySelector(".md-path")?.textContent).toBe("child/");
+    expect(childRow.querySelector(".md-count")?.textContent).toBe("1");
+
+    expect(collapse).toContain('href="/canvas/team-canvas/reference/chunking">Open</a>');
+    expect(collapse).toContain('href="/canvas/team-canvas/reference/chunking/edit">Code</a>');
+    expect(collapse).toContain('data-copy-share="team-canvas/reference/chunking"');
+
+    const nestedKnowledge = {
+      roots: [
+        {
+          id: "team-canvas/index",
+          missing: false,
+          children: [
+            {
+              id: "team-canvas/reference/chunking",
+              missing: false,
+              children: [{ id: "laws-of-ux/reference/chunking", missing: false, children: [] }],
+            },
+          ],
+        },
+      ],
+      unlinked: ["index"],
+    };
+    const collapseTree = indexShellHtml(ids, nestedKnowledge);
+    const kdom = new JSDOM(collapseTree, { runScripts: "dangerously", url: "http://canvas.test/" }).window.document;
+    const knowledge = kdom.querySelector('[data-shell="knowledge"]')!;
+    expect(
+      [...knowledge.querySelectorAll(":scope > .md-group > .md-subheader .md-path")].map((el) => el.textContent),
+    ).toEqual(["team-canvas/index", "Unlinked"]);
+    const kParent = knowledge.querySelector(":scope > .md-group")!;
+    expect(kParent.querySelector(":scope > .md-subheader .md-count")?.textContent).toBe("2");
+    kParent.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    const nestedK = kParent.querySelector(":scope > .md-panel > .md-children > .md-group")!;
+    expect(nestedK.querySelector(".md-path")?.textContent).toBe("team-canvas/reference/chunking");
+    expect(knowledge.querySelectorAll(":scope > .md-group")).toHaveLength(2);
+    nestedK.querySelector<HTMLButtonElement>(".md-disclosure")!.click();
+    expect(nestedK.querySelector(".md-grid")?.textContent).toContain("laws-of-ux/reference/chunking.canvas.tsx");
+    expect(kdom.querySelector('[data-library-toggle="folders"]')?.getAttribute("aria-pressed")).toBe("true");
+    kdom.querySelector<HTMLButtonElement>('[data-library-toggle="knowledge"]')!.click();
+    expect(knowledge.hasAttribute("hidden")).toBe(false);
+
+    expect(viewerShellHtml("demo", { kind: "ok", js: "" })).not.toContain("Library style");
+    expect(editShellHtml("demo", { kind: "ok", js: "" })).not.toContain("Library style");
+    expect(settlementShellHtml([])).not.toContain("Library style");
+    expect(indexShellHtml([])).not.toContain("Library style");
   });
 
   it("a 200 with a skipped revert stays on the page and the status line shows skipped", async () => {
