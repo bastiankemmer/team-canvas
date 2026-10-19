@@ -408,7 +408,24 @@ describe("mcp stdio server", () => {
     });
     expect(
       MCP_TOOL_DEFS.find((t) => t.name === "list_canvases")?.inputSchema,
-    ).toEqual({ type: "object", properties: {} });
+    ).toEqual({
+      type: "object",
+      properties: {
+        folder: {
+          type: "string",
+          description: 'Folder path relative to the store root ("" or omitted for root)',
+        },
+        type: {
+          type: "string",
+          enum: ["canvas", "folder"],
+          description: 'What to list: "canvas" (default) or "folder"',
+        },
+        depth: {
+          type: "number",
+          description: "Max depth relative to folder (1 for direct children; omit for all levels)",
+        },
+      },
+    });
 
     const noName = await handleMcpJsonRpc(ops, {
       id: 3,
@@ -487,8 +504,25 @@ describe("mcp stdio server", () => {
     expect(byName.list_canvases).toEqual({
       name: "list_canvases",
       description:
-        'List canvas ids in the store root. Ids are relative to the store root and may contain "/".',
-      inputSchema: { type: "object", properties: {} },
+        'List canvas ids or folder paths in the store root. Ids are relative to the store root and may contain "/". Filter by folder ("" or omitted for root), type ("canvas" or "folder"), and depth (e.g. 1 for immediate children).',
+      inputSchema: {
+        type: "object",
+        properties: {
+          folder: {
+            type: "string",
+            description: 'Folder path relative to the store root ("" or omitted for root)',
+          },
+          type: {
+            type: "string",
+            enum: ["canvas", "folder"],
+            description: 'What to list: "canvas" (default) or "folder"',
+          },
+          depth: {
+            type: "number",
+            description: "Max depth relative to folder (1 for direct children; omit for all levels)",
+          },
+        },
+      },
     });
     expect(byName.create_canvas).toEqual({
       name: "create_canvas",
@@ -1331,5 +1365,61 @@ describe("parseMcpArgs", () => {
     const back = await callMcpTool(ops, "backlinks", { id: "reference/mcp-tools" });
     expect(back.isError).toBeFalsy();
     expect(JSON.parse(back.content[0]!.text)).toEqual(incoming);
+
+    await ops.writeSource("roadmap", "export default function R() { return null }\n");
+    await ops.writeSource("eva-space/index", "export default function E() { return null }\n");
+    await ops.writeSource("eva-space/arch/overview", "export default function O() { return null }\n");
+    await ops.writeSource("eva-space/arch/db", "export default function D() { return null }\n");
+    await ops.writeSource("eva-space/ui/shell", "export default function S() { return null }\n");
+
+    const topFolders = await callMcpTool(ops, "list_canvases", { type: "folder", depth: 1 });
+    expect(topFolders.isError).toBeFalsy();
+    expect(JSON.parse(topFolders.content[0]!.text)).toEqual(["eva-space", "guides", "reference"]);
+
+    const allFolders = await callMcpTool(ops, "list_canvases", { type: "folder" });
+    expect(JSON.parse(allFolders.content[0]!.text)).toEqual([
+      "eva-space",
+      "eva-space/arch",
+      "eva-space/ui",
+      "guides",
+      "reference",
+    ]);
+
+    const evaFolders = await callMcpTool(ops, "list_canvases", {
+      folder: "eva-space",
+      type: "folder",
+      depth: 1,
+    });
+    expect(JSON.parse(evaFolders.content[0]!.text)).toEqual(["eva-space/arch", "eva-space/ui"]);
+
+    const evaDirectCanvases = await callMcpTool(ops, "list_canvases", {
+      folder: "eva-space",
+      depth: 1,
+    });
+    expect(JSON.parse(evaDirectCanvases.content[0]!.text)).toEqual(["eva-space/index"]);
+
+    const evaAllCanvases = await callMcpTool(ops, "list_canvases", { folder: "eva-space" });
+    expect(JSON.parse(evaAllCanvases.content[0]!.text).sort()).toEqual([
+      "eva-space/arch/db",
+      "eva-space/arch/overview",
+      "eva-space/index",
+      "eva-space/ui/shell",
+    ]);
+
+    const rootDirectCanvases = await callMcpTool(ops, "list_canvases", { folder: "", depth: 1 });
+    expect(JSON.parse(rootDirectCanvases.content[0]!.text)).toEqual(["roadmap"]);
+
+    for (const bad of [
+      { type: "nope" },
+      { depth: 0 },
+      { depth: -1 },
+      { depth: 1.5 },
+      { depth: "1" },
+      { folder: 123 },
+      { folder: "../escape" },
+    ]) {
+      const res = await callMcpTool(ops, "list_canvases", bad as Record<string, unknown>);
+      expect(res.isError, JSON.stringify(bad)).toBe(true);
+    }
   });
 });

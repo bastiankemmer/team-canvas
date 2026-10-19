@@ -1,4 +1,5 @@
 import type { CanvasStore } from "../../ports/canvas-store.js";
+import { assertSafeCanvasId } from "../../adapters/store/local-fs-canvas-store.js";
 import {
   addOrientedSibling,
   applySlotFills,
@@ -59,10 +60,16 @@ export type CheckResult =
   | { ok: true; id: string }
   | { ok: false; id: string; error: string };
 
+export type ListCanvasesOptions = {
+  folder?: string;
+  type?: "canvas" | "folder";
+  depth?: number;
+};
+
 export type CanvasEditOps = {
   /** Change log, intents, topics and rollback shared by every write below. */
   settlement: Settlement;
-  listCanvases(): Promise<string[]>;
+  listCanvases(opts?: ListCanvasesOptions): Promise<string[]>;
   /** New canvas from `source`, or a starter file. Refuses an id that already exists. */
   createCanvas(id: string, source?: string, meta?: WriteMeta): Promise<CreateResult>;
   readSource(id: string): Promise<string>;
@@ -146,6 +153,37 @@ function isEnoent(err: unknown): boolean {
   );
 }
 
+function parseListPrefix(folder = ""): string {
+  if (folder !== "") assertSafeCanvasId(folder);
+  return folder === "" ? "" : `${folder}/`;
+}
+
+function parseListType(type = "canvas"): "canvas" | "folder" {
+  if (type !== "canvas" && type !== "folder") {
+    throw new Error('type must be "canvas" or "folder"');
+  }
+  return type;
+}
+
+function parseListDepth(depth = Infinity): number {
+  if (depth !== Infinity && (!Number.isInteger(depth) || depth < 1)) {
+    throw new Error("depth must be a positive integer");
+  }
+  return depth;
+}
+
+function listFolders(scoped: readonly string[], prefix: string, maxDepth: number): string[] {
+  const folders = new Set<string>();
+  for (const id of scoped) {
+    const parts = id.slice(prefix.length).split("/").slice(0, -1);
+    const limit = Math.min(parts.length, maxDepth);
+    for (let i = 1; i <= limit; i++) {
+      folders.add(`${prefix}${parts.slice(0, i).join("/")}`);
+    }
+  }
+  return [...folders].sort();
+}
+
 export type EditOpsOptions = {
   /**
    * Every write must name an `actor` that holds the canvas lease (default true).
@@ -187,7 +225,14 @@ export function createCanvasEditOps(
 
   return {
     settlement,
-    listCanvases: () => store.list(),
+    async listCanvases(opts = {}) {
+      const prefix = parseListPrefix(opts.folder);
+      const type = parseListType(opts.type);
+      const maxDepth = parseListDepth(opts.depth);
+      const scoped = (await store.list()).filter((id) => id.startsWith(prefix));
+      if (type === "folder") return listFolders(scoped, prefix, maxDepth);
+      return scoped.filter((id) => id.slice(prefix.length).split("/").length <= maxDepth);
+    },
     async createCanvas(id, source, meta) {
       assertNewCanvasId(id);
       const normalized = await guard(id, meta);

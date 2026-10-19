@@ -45,8 +45,25 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "list_canvases",
     description:
-      'List canvas ids in the store root. Ids are relative to the store root and may contain "/".',
-    inputSchema: { type: "object", properties: {} },
+      'List canvas ids or folder paths in the store root. Ids are relative to the store root and may contain "/". Filter by folder ("" or omitted for root), type ("canvas" or "folder"), and depth (e.g. 1 for immediate children).',
+    inputSchema: {
+      type: "object",
+      properties: {
+        folder: {
+          type: "string",
+          description: 'Folder path relative to the store root ("" or omitted for root)',
+        },
+        type: {
+          type: "string",
+          enum: ["canvas", "folder"],
+          description: 'What to list: "canvas" (default) or "folder"',
+        },
+        depth: {
+          type: "number",
+          description: "Max depth relative to folder (1 for direct children; omit for all levels)",
+        },
+      },
+    },
   },
   {
     name: "create_canvas",
@@ -327,6 +344,13 @@ function optionalString(args: Record<string, unknown>, key: string): string | un
   return v;
 }
 
+function optionalNumber(args: Record<string, unknown>, key: string): number | undefined {
+  const v = args[key];
+  if (v === undefined) return undefined;
+  if (typeof v !== "number") throw new Error(`Invalid argument: ${key}`);
+  return v;
+}
+
 function requireSlotRecord(args: Record<string, unknown>): Record<string, string> {
   const slots = args.slots;
   if (!slots || typeof slots !== "object" || Array.isArray(slots)) {
@@ -348,7 +372,12 @@ type ToolHandler = (
 ) => Promise<unknown>;
 
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
-  list_canvases: (ops) => ops.listCanvases(),
+  list_canvases: (ops, args) =>
+    ops.listCanvases({
+      folder: optionalString(args, "folder"),
+      type: optionalString(args, "type") as "canvas" | "folder" | undefined,
+      depth: optionalNumber(args, "depth"),
+    }),
   create_canvas: (ops, args) =>
     ops.createCanvas(
       requireString(args, "id"),
