@@ -200,4 +200,40 @@ describe("SDK charts, diff, DAG", () => {
       root.unmount();
     });
   });
+
+  it("horizontal BarChart expands left and right padding so long category and value labels are not clipped", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let root: Root;
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        createElement(BarChart, {
+          horizontal: true,
+          categories: [
+            "Orch Review (27)",
+            "DB Write (9 Gem+3 Sol)",
+          ],
+          series: [{ name: "Cost (USD)", data: [18.39, 11.45], tone: "danger" }],
+          valuePrefix: "$",
+          showValues: true,
+        }),
+      );
+    });
+
+    const svg = container.querySelector('svg[aria-label="bar chart"]')!;
+    const [, , vbW] = svg.getAttribute("viewBox")!.split(" ").map(Number);
+    const rects = [...svg.querySelectorAll("rect")];
+    const padL = Number(rects[0]!.getAttribute("x"));
+    const maxRight = Math.max(
+      ...rects.map((r) => Number(r.getAttribute("x")) + Number(r.getAttribute("width"))),
+    );
+    expect(padL).toBeGreaterThanOrEqual(22 * 6.8 + 14);
+    expect(vbW! - maxRight).toBeGreaterThanOrEqual(5 * 7 + 12);
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });

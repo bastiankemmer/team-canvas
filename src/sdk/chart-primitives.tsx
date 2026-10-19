@@ -230,6 +230,23 @@ type BarPlotGeom = {
   single: boolean;
 };
 
+function barPadding(
+  horizontal: boolean,
+  maxCatChars: number,
+  maxValChars: number,
+): { padL: number; padR: number; padT: number; padB: number } {
+  if (!horizontal) {
+    return { padL: 40, padR: 16, padT: 12, padB: 36 };
+  }
+  // ponytail: char-count width estimate at 11px sans-serif; ceiling = CJK/emoji widths; upgrade = canvas measureText
+  return {
+    padL: Math.max(72, Math.ceil(maxCatChars * 6.8) + 14),
+    padR: Math.max(16, Math.ceil(maxValChars * 7) + 12),
+    padT: 12,
+    padB: 24,
+  };
+}
+
 function barPlotGeom(
   height: number,
   horizontal: boolean,
@@ -237,13 +254,12 @@ function barPlotGeom(
   seriesCount: number,
   doStack: boolean,
   single: boolean,
+  maxCatChars: number,
+  maxValChars: number,
 ): BarPlotGeom {
-  const plotW = 480;
-  const plotH = height;
-  const padL = horizontal ? 72 : 40;
-  const padR = 16;
-  const padT = 12;
-  const padB = horizontal ? 24 : 36;
+  const { padL, padR, padT, padB } = barPadding(horizontal, maxCatChars, maxValChars);
+  const plotW = Math.max(480, padL + padR + 220);
+  const plotH = horizontal ? Math.max(height, padT + padB + nCat * 22) : height;
   const innerW = plotW - padL - padR;
   const innerH = plotH - padT - padB;
   const groupGap = 8;
@@ -598,6 +614,16 @@ export function BarChart({
   const autoShow =
     showValues ?? (single && !doStack && categories.length <= 8);
 
+  const stackTotals = stackTotalsFor(categories, series);
+  const rawValues = rawValuesForBars(doStack, normalized, stackTotals, series);
+  const maxCatChars = categories.reduce((m, c) => Math.max(m, c.length), 0);
+  const maxValChars =
+    autoShow && !doStack
+      ? rawValues.reduce(
+          (m, v) => Math.max(m, formatValue(v, valuePrefix, valueSuffix).length),
+          0,
+        )
+      : 0;
   const geom = barPlotGeom(
     height,
     horizontal,
@@ -605,9 +631,9 @@ export function BarChart({
     series.length,
     doStack,
     single,
+    maxCatChars,
+    maxValChars,
   );
-  const stackTotals = stackTotalsFor(categories, series);
-  const rawValues = rawValuesForBars(doStack, normalized, stackTotals, series);
   const { min, max } = barDomain(
     doStack,
     normalized,
