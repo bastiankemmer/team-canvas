@@ -89,6 +89,18 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
     },
   },
   {
+    name: "read_sources",
+    description:
+      "Read full .canvas.tsx source for several ids in one call. Returns { sources } keyed by id, each { source } or { error }, so one missing canvas does not drop the rest",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" } },
+      },
+      required: ["ids"],
+    },
+  },
+  {
     name: "write_source",
     description:
       "Replace the ENTIRE .canvas.tsx source for an id. For a change to part of a canvas use replace_in_source instead",
@@ -332,6 +344,14 @@ function requireString(args: Record<string, unknown>, key: string): string {
   return v;
 }
 
+function requireStringList(args: Record<string, unknown>, key: string): string[] {
+  const v = args[key];
+  if (!Array.isArray(v) || !v.every((item) => typeof item === "string")) {
+    throw new Error(`Missing or invalid argument: ${key}`);
+  }
+  return v;
+}
+
 function metaFrom(args: Record<string, unknown>): WriteMeta {
   const { actor, reason, topic } = args;
   return { actor: actor as string, reason: reason as string, topic: topic as string };
@@ -385,6 +405,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       metaFrom(args),
     ),
   read_source: (ops, args) => ops.readSource(requireString(args, "id")),
+  read_sources: (ops, args) => ops.readSources(requireStringList(args, "ids")),
   write_source: async (ops, args) => {
     const id = requireString(args, "id");
     await ops.writeSource(id, requireString(args, "source"), metaFrom(args));

@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -66,6 +66,7 @@ describe("mcp stdio server", () => {
       "list_canvases",
       "create_canvas",
       "read_source",
+      "read_sources",
       "write_source",
       "replace_in_source",
       "check_canvas",
@@ -331,6 +332,7 @@ describe("mcp stdio server", () => {
       "list_canvases",
       "create_canvas",
       "read_source",
+      "read_sources",
       "write_source",
       "replace_in_source",
       "check_canvas",
@@ -545,6 +547,18 @@ describe("mcp stdio server", () => {
         type: "object",
         properties: idProp,
         required: ["id"],
+      },
+    });
+    expect(byName.read_sources).toEqual({
+      name: "read_sources",
+      description:
+        "Read full .canvas.tsx source for several ids in one call. Returns { sources } keyed by id, each { source } or { error }, so one missing canvas does not drop the rest",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ids: { type: "array", items: { type: "string" } },
+        },
+        required: ["ids"],
       },
     });
     expect(byName.write_source).toEqual({
@@ -1021,6 +1035,73 @@ describe("parseMcpArgs", () => {
     expect(await readFile(path.join(root, "numsrc.canvas.tsx"), "utf8")).toContain(
       "export default function Numsrc()",
     );
+  });
+
+  it("read_sources returns several canvas sources in one MCP call so a missing id does not drop the canvases that exist", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-read-sources-"));
+    const indexSource = "export default function Index() { return null }\n";
+    const toolsSource = "export default function McpTools() { return null }\n";
+    const indexFile = path.join(root, "team-canvas", "index.canvas.tsx");
+    const toolsFile = path.join(root, "team-canvas", "reference", "mcp-tools.canvas.tsx");
+    await mkdir(path.dirname(indexFile), { recursive: true });
+    await mkdir(path.dirname(toolsFile), { recursive: true });
+    await writeFile(indexFile, indexSource, "utf8");
+    await writeFile(toolsFile, toolsSource, "utf8");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+
+    const batch = await callMcpTool(ops, "read_sources", {
+      ids: ["team-canvas/index", "team-canvas/reference/mcp-tools", "team-canvas/missing"],
+    });
+    expect(batch.isError).toBeFalsy();
+    expect(JSON.parse(batch.content[0]!.text)).toEqual({
+      sources: {
+        "team-canvas/index": { source: indexSource },
+        "team-canvas/reference/mcp-tools": { source: toolsSource },
+        "team-canvas/missing": { error: expect.stringMatching(/^ENOENT: no such file or directory/) },
+      },
+    });
+
+    const one = await callMcpTool(ops, "read_source", { id: "team-canvas/index" });
+    expect(one.isError).toBeFalsy();
+    expect(one.content[0]!.text).toBe(indexSource);
+
+    const bad = await callMcpTool(ops, "read_sources", { ids: "team-canvas/index" });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0]!.text).toMatch(/ids/);
+  });
+
+  it("read_sources rejects a non-array ids and any non-string id so those values are not read as canvas ids", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-read-sources-ids-"));
+    const source = "export default function Index() { return null }\n";
+    const indexFile = path.join(root, "team-canvas", "index.canvas.tsx");
+    await mkdir(path.dirname(indexFile), { recursive: true });
+    await writeFile(indexFile, source, "utf8");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+
+    const ok = await callMcpTool(ops, "read_sources", { ids: ["team-canvas/index"] });
+    expect(ok.isError).toBeFalsy();
+    expect(JSON.parse(ok.content[0]!.text)).toEqual({
+      sources: { "team-canvas/index": { source } },
+    });
+
+    // A mixed list still has a string, so "any id is a string" would accept it.
+    for (const ids of ["team-canvas/index", ["team-canvas/index", 1], [1]]) {
+      const bad = await callMcpTool(ops, "read_sources", { ids: ids as never });
+      expect(bad.isError, JSON.stringify(ids)).toBe(true);
+      expect(bad.content[0]!.text, JSON.stringify(ids)).toBe("Missing or invalid argument: ids");
+    }
+  });
+
+  it("read_sources rejects an ids list mixing a string with a non-string, and accepts only strings, so a weaker element check cannot widen or close the list", async () => {
+    const { ops } = await tempOps();
+
+    const ok = await callMcpTool(ops, "read_sources", { ids: ["demo"] });
+    expect(ok.isError).toBeFalsy();
+    expect(JSON.parse(ok.content[0]!.text).sources.demo).toEqual({ source: TWO_CARDS });
+
+    const mixed = await callMcpTool(ops, "read_sources", { ids: ["demo", 1] });
+    expect(mixed.isError).toBe(true);
+    expect(mixed.content[0]!.text).toMatch(/ids/);
   });
 
   it("replace_in_source: edits in place with the same { ok, id, replacements } as HTTP; ambiguous, missing and malformed calls are errors", async () => {

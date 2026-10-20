@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -59,6 +59,50 @@ describe("canvas edit ops", () => {
     );
 
     await expect(ops.searchSource("demo", "")).rejects.toThrow(/non-empty/i);
+  });
+
+  it("readSources maps each canvas to its source text and keeps a missing id as an error so the other reads still return", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-read-sources-"));
+    const indexSource = "export default function Index() { return null }\n";
+    const toolsSource = "export default function McpTools() { return null }\n";
+    const indexFile = path.join(root, "team-canvas", "index.canvas.tsx");
+    const toolsFile = path.join(root, "team-canvas", "reference", "mcp-tools.canvas.tsx");
+    await mkdir(path.dirname(indexFile), { recursive: true });
+    await mkdir(path.dirname(toolsFile), { recursive: true });
+    await writeFile(indexFile, indexSource, "utf8");
+    await writeFile(toolsFile, toolsSource, "utf8");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+
+    // An unsafe id is first: a throw there would drop the canvases that exist.
+    const result = await ops.readSources([
+      "../escape",
+      "team-canvas/index",
+      "team-canvas/reference/mcp-tools",
+      "team-canvas/missing",
+    ]);
+
+    expect(result.sources["team-canvas/index"]).toEqual({ source: indexSource });
+    expect(result.sources["team-canvas/reference/mcp-tools"]).toEqual({ source: toolsSource });
+    expect(result.sources["team-canvas/missing"]).toEqual({
+      error: expect.stringMatching(/^ENOENT: no such file or directory/),
+    });
+    expect(result.sources["../escape"]).toEqual({
+      error: 'Invalid canvas id "../escape": must be a relative path of non-empty segments',
+    });
+    expect(await ops.readSource("team-canvas/index")).toBe(indexSource);
+  });
+
+  it("readSources keeps an id of __proto__ in the JSON map so that canvas source is not omitted", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-read-proto-"));
+    const source = "export default function Proto() { return null }\n";
+    await writeFile(path.join(root, "__proto__.canvas.tsx"), source, "utf8");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+
+    const result = await ops.readSources(["__proto__"]);
+    const parsed = JSON.parse(JSON.stringify(result)) as {
+      sources: Record<string, { source?: string }>;
+    };
+    expect(parsed.sources["__proto__"]).toEqual({ source });
   });
 
   it("createCanvas: starter compiles, custom source wins, blank source falls back, duplicates and bad ids are refused", async () => {

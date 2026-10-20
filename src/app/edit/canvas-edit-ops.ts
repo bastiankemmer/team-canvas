@@ -55,6 +55,12 @@ export type MoveResult = { ok: true; moved: MovePair[] };
 /** Reply for replace: same `{ ok, id, replacements }` over HTTP and MCP. */
 export type ReplaceResult = { ok: true; id: string; replacements: number };
 
+/** One id from a batch read: the file text, or why that id failed. */
+export type SourceRead = { source: string } | { error: string };
+
+/** Batch read. A missing id stays on that key so the other sources still return. */
+export type ReadSourcesResult = { sources: Record<string, SourceRead> };
+
 /** Same reply for check, over HTTP and MCP: does the canvas still bundle? */
 export type CheckResult =
   | { ok: true; id: string }
@@ -73,6 +79,8 @@ export type CanvasEditOps = {
   /** New canvas from `source`, or a starter file. Refuses an id that already exists. */
   createCanvas(id: string, source?: string, meta?: WriteMeta): Promise<CreateResult>;
   readSource(id: string): Promise<string>;
+  /** Several ids in one call. Failures stay on their id; they do not drop the rest. */
+  readSources(ids: string[]): Promise<ReadSourcesResult>;
   /** Every write takes optional `meta` (who, why, topic) for the change log. */
   writeSource(id: string, source: string, meta?: WriteMeta): Promise<void>;
   /** Replace exact text in place; the rest of the file stays byte-identical. */
@@ -245,6 +253,19 @@ export function createCanvasEditOps(
       return { ok: true, id };
     },
     readSource: (id) => store.readSource(id),
+    async readSources(ids) {
+      // Null prototype: the legal id "__proto__" must stay an own entry, or JSON drops it.
+      const sources: Record<string, SourceRead> = Object.create(null);
+      for (const id of ids) {
+        try {
+          sources[id] = { source: await store.readSource(id) };
+        } catch (err) {
+          // Per id: one missing or unsafe id must not throw away the sources already read.
+          sources[id] = { error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      return { sources };
+    },
     async writeSource(id, source, meta) {
       await write(id, "write_source", source, await guard(id, meta));
     },
