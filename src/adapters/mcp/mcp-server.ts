@@ -2,6 +2,7 @@ import type { Readable, Writable } from "node:stream";
 import {
   createCanvasEditOps,
   type CanvasEditOps,
+  type ReplaceEdit,
 } from "../../app/edit/canvas-edit-ops.js";
 import type { TopicStatus, WriteMeta } from "../../app/settle/settlement.js";
 import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
@@ -117,7 +118,7 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "replace_in_source",
     description:
-      "Replace exact text in a canvas without rewriting the file. Fails if old_string is not found, or matches more than once unless replace_all is true. Use search_source to find the text; prefer this over write_source for changes to large canvases",
+      "Replace exact text in a canvas without rewriting the file. Fails if old_string is not found, or matches more than once unless replace_all is true. Pass edits to apply several replacements in order in one write; a later edit that matches nothing leaves the canvas unchanged. Use search_source to find the text; prefer this over write_source for changes to large canvases",
     inputSchema: {
       type: "object",
       properties: {
@@ -126,8 +127,20 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
         old_string: { type: "string" },
         new_string: { type: "string" },
         replace_all: { type: "boolean" },
+        edits: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              old_string: { type: "string" },
+              new_string: { type: "string" },
+              replace_all: { type: "boolean" },
+            },
+            required: ["old_string", "new_string"],
+          },
+        },
       },
-      required: ["id", "old_string", "new_string", "actor"],
+      required: ["id", "actor"],
     },
   },
   {
@@ -352,6 +365,22 @@ function requireStringList(args: Record<string, unknown>, key: string): string[]
   return v;
 }
 
+function requireEdits(value: unknown): ReplaceEdit[] {
+  if (!Array.isArray(value)) throw new Error("Missing or invalid argument: edits");
+  return value.map((item) => {
+    if (!item || typeof item !== "object") throw new Error("Missing or invalid argument: edits");
+    const edit = item as Record<string, unknown>;
+    if (typeof edit.old_string !== "string" || typeof edit.new_string !== "string") {
+      throw new Error("Missing or invalid argument: edits");
+    }
+    return {
+      old_string: edit.old_string,
+      new_string: edit.new_string,
+      replace_all: edit.replace_all === true,
+    };
+  });
+}
+
 function metaFrom(args: Record<string, unknown>): WriteMeta {
   const { actor, reason, topic } = args;
   return { actor: actor as string, reason: reason as string, topic: topic as string };
@@ -411,14 +440,24 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     await ops.writeSource(id, requireString(args, "source"), metaFrom(args));
     return { ok: true, id };
   },
-  replace_in_source: (ops, args) =>
-    ops.replaceInSource(
-      requireString(args, "id"),
+  replace_in_source: (ops, args) => {
+    const id = requireString(args, "id");
+    const meta = metaFrom(args);
+    const hasEdits = args.edits !== undefined;
+    const hasSingle = args.old_string !== undefined || args.new_string !== undefined;
+    // Running only edits would still return ok and drop the single replacement.
+    if (hasEdits && hasSingle) {
+      throw new Error("Pass either edits or old_string and new_string, not both");
+    }
+    if (hasEdits) return ops.replaceInSource(id, requireEdits(args.edits), meta);
+    return ops.replaceInSource(
+      id,
       requireString(args, "old_string"),
       requireString(args, "new_string"),
       args.replace_all === true,
-      metaFrom(args),
-    ),
+      meta,
+    );
+  },
   check_canvas: (ops, args) => ops.checkCanvas(requireString(args, "id")),
   search_source: (ops, args) =>
     ops.searchSource(requireString(args, "id"), requireString(args, "query")),

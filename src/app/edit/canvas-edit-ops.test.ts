@@ -251,6 +251,78 @@ describe("canvas edit ops", () => {
     expect(await ops.listCanvases()).toEqual(["big"]);
   });
 
+  it("replaceInSource applies ordered edits in one write so a later miss cannot leave a half-edited canvas", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-replace-batch-"));
+    const inner = LocalFilesystemCanvasStore(root);
+    let writes = 0;
+    const store: CanvasStore = {
+      ...inner,
+      writeSource: async (id, source) => {
+        writes += 1;
+        await inner.writeSource(id, source);
+      },
+    };
+    const ops = createCanvasEditOps(store, { requireLease: false });
+    await inner.writeSource("demo", "alpha beta");
+
+    expect(
+      await ops.replaceInSource("demo", [
+        { old_string: "alpha", new_string: "beta" },
+        { old_string: "beta beta", new_string: "gamma" },
+      ]),
+    ).toEqual({ ok: true, id: "demo", replacements: 2 });
+    expect(await inner.readSource("demo")).toBe("gamma");
+    expect(writes).toBe(1);
+
+    await inner.writeSource("demo", "red red blue");
+    writes = 0;
+    expect(
+      await ops.replaceInSource("demo", [
+        { old_string: "red", new_string: "green", replace_all: true },
+        { old_string: "green green", new_string: "done" },
+      ]),
+    ).toEqual({ ok: true, id: "demo", replacements: 3 });
+    expect(await inner.readSource("demo")).toBe("done blue");
+    expect(writes).toBe(1);
+
+    await inner.writeSource("demo", "alpha beta");
+    writes = 0;
+    await expect(
+      ops.replaceInSource("demo", [
+        { old_string: "alpha", new_string: "beta" },
+        { old_string: "missing", new_string: "nope" },
+      ]),
+    ).rejects.toThrow(/not found in canvas "demo"/);
+    expect(await inner.readSource("demo")).toBe("alpha beta");
+    expect(writes).toBe(0);
+
+    await expect(ops.replaceInSource("demo", [])).rejects.toThrow(/non-empty/);
+    expect(writes).toBe(0);
+  });
+
+  it("replaceInSource records the write as replace_in_source so the change log names the edit that landed", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-replace-log-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    await writeFile(path.join(root, "demo.canvas.tsx"), "alpha beta", "utf8");
+
+    await ops.replaceInSource("demo", [{ old_string: "alpha", new_string: "gamma" }]);
+
+    const log = await ops.settlement.listChanges({ canvas: "demo" });
+    expect(log).toHaveLength(1);
+    expect(log[0]!.tool).toBe("replace_in_source");
+  });
+
+  it("replaceInSource records the tool name replace_in_source so a blank name cannot stand in for that edit", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-replace-tool-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    await writeFile(path.join(root, "demo.canvas.tsx"), "alpha", "utf8");
+
+    await ops.replaceInSource("demo", "alpha", "beta");
+
+    const tools = (await ops.settlement.listChanges({ canvas: "demo" })).map((entry) => entry.tool);
+    expect(tools).toContain("replace_in_source");
+  });
+
   it("checkCanvas: ok for a good canvas; syntax error, bad import and missing default export come back as messages, not throws", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-check-"));
     const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });

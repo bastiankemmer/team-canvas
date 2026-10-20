@@ -5,6 +5,7 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { createCanvasEditOps } from "../../app/edit/canvas-edit-ops.js";
+import type { CanvasStore } from "../../ports/canvas-store.js";
 import { CLI_USAGE, parseMcpArgs, runCli } from "../../cli.js";
 import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
 import {
@@ -578,7 +579,7 @@ describe("mcp stdio server", () => {
     expect(byName.replace_in_source).toEqual({
       name: "replace_in_source",
       description:
-        "Replace exact text in a canvas without rewriting the file. Fails if old_string is not found, or matches more than once unless replace_all is true. Use search_source to find the text; prefer this over write_source for changes to large canvases",
+        "Replace exact text in a canvas without rewriting the file. Fails if old_string is not found, or matches more than once unless replace_all is true. Pass edits to apply several replacements in order in one write; a later edit that matches nothing leaves the canvas unchanged. Use search_source to find the text; prefer this over write_source for changes to large canvases",
       inputSchema: {
         type: "object",
         properties: {
@@ -587,8 +588,20 @@ describe("mcp stdio server", () => {
           old_string: { type: "string" },
           new_string: { type: "string" },
           replace_all: { type: "boolean" },
+          edits: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                old_string: { type: "string" },
+                new_string: { type: "string" },
+                replace_all: { type: "boolean" },
+              },
+              required: ["old_string", "new_string"],
+            },
+          },
         },
-        required: ["id", "old_string", "new_string", "actor"],
+        required: ["id", "actor"],
       },
     });
     expect(byName.check_canvas).toEqual({
@@ -1146,6 +1159,174 @@ describe("parseMcpArgs", () => {
       const r = await callMcpTool(ops, "replace_in_source", args);
       expect(r.isError, JSON.stringify(args)).toBe(true);
     }
+  });
+
+  it("replace_in_source applies several replacements in one call so a later miss cannot leave a half-edited canvas", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-replace-batch-"));
+    const inner = LocalFilesystemCanvasStore(root);
+    let writes = 0;
+    const store: CanvasStore = {
+      ...inner,
+      writeSource: async (id, source) => {
+        writes += 1;
+        await inner.writeSource(id, source);
+      },
+    };
+    const ops = createCanvasEditOps(store, { requireLease: false });
+    const file = path.join(root, "demo.canvas.tsx");
+    const read = () => readFile(file, "utf8");
+
+    await store.writeSource("demo", "alpha beta");
+    writes = 0;
+    const one = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      old_string: "beta",
+      new_string: "BETA",
+    });
+    expect(one.isError).toBeFalsy();
+    expect(JSON.parse(one.content[0]!.text)).toEqual({ ok: true, id: "demo", replacements: 1 });
+    expect(await read()).toBe("alpha BETA");
+    expect(writes).toBe(1);
+
+    await inner.writeSource("demo", "alpha beta");
+    writes = 0;
+    const batch = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      edits: [
+        { old_string: "alpha", new_string: "beta" },
+        { old_string: "beta beta", new_string: "gamma" },
+      ],
+    });
+    expect(batch.isError).toBeFalsy();
+    expect(JSON.parse(batch.content[0]!.text)).toEqual({ ok: true, id: "demo", replacements: 2 });
+    expect(await read()).toBe("gamma");
+    expect(writes).toBe(1);
+
+    await inner.writeSource("demo", "red red blue");
+    writes = 0;
+    const all = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      edits: [
+        { old_string: "red", new_string: "green", replace_all: true },
+        { old_string: "green green", new_string: "done" },
+      ],
+    });
+    expect(all.isError).toBeFalsy();
+    expect(await read()).toBe("done blue");
+    expect(writes).toBe(1);
+
+    await inner.writeSource("demo", "alpha beta");
+    writes = 0;
+    const miss = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      edits: [
+        { old_string: "alpha", new_string: "beta" },
+        { old_string: "missing", new_string: "nope" },
+      ],
+    });
+    expect(miss.isError).toBe(true);
+    expect(miss.content[0]!.text).toMatch(/not found/);
+    expect(await read()).toBe("alpha beta");
+    expect(writes).toBe(0);
+
+    for (const edits of ["alpha", [{ old_string: "alpha" }], [null]]) {
+      const bad = await callMcpTool(ops, "replace_in_source", { id: "demo", edits });
+      expect(bad.isError, JSON.stringify(edits)).toBe(true);
+      expect(bad.content[0]!.text).toMatch(/edits/);
+    }
+    expect(await read()).toBe("alpha beta");
+    expect(writes).toBe(0);
+  });
+
+  it("replace_in_source rejects edits sent with old_string and new_string so the single replacement is not dropped", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-replace-both-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    const file = path.join(root, "demo.canvas.tsx");
+    await writeFile(file, "alpha beta", "utf8");
+
+    const both = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      old_string: "alpha",
+      new_string: "ALPHA",
+      edits: [{ old_string: "beta", new_string: "BETA" }],
+    });
+    expect(both.isError).toBe(true);
+    expect(both.content[0]!.text).toMatch(/not both/);
+    expect(await readFile(file, "utf8")).toBe("alpha beta");
+  });
+
+  it("replace_in_source rejects an edits entry that is not an object so it is not applied as a replacement", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-replace-entry-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    const file = path.join(root, "demo.canvas.tsx");
+    const original = "alpha beta";
+    await writeFile(file, original, "utf8");
+
+    // A function is truthy and can carry string fields, so the later string check would accept it.
+    const notObject: unknown = Object.assign(() => undefined, {
+      old_string: "alpha",
+      new_string: "BETA",
+    });
+    for (const edits of [[1], [notObject]]) {
+      const bad = await callMcpTool(ops, "replace_in_source", { id: "demo", edits });
+      expect(bad.isError, JSON.stringify(edits)).toBe(true);
+      expect(bad.content[0]!.text).toBe("Missing or invalid argument: edits");
+      expect(await readFile(file, "utf8")).toBe(original);
+    }
+  });
+
+  it("replace_in_source rejects an edits entry whose old_string or new_string is not a string so the text is not coerced into a replacement", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-replace-types-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    const file = path.join(root, "demo.canvas.tsx");
+    const original = "alpha beta";
+    await writeFile(file, original, "utf8");
+
+    for (const edits of [
+      [{ old_string: 1, new_string: "BETA" }],
+      [{ old_string: "alpha", new_string: 1 }],
+    ]) {
+      const bad = await callMcpTool(ops, "replace_in_source", { id: "demo", edits });
+      expect(bad.isError, JSON.stringify(edits)).toBe(true);
+      expect(bad.content[0]!.text).toBe("Missing or invalid argument: edits");
+      expect(await readFile(file, "utf8")).toBe(original);
+    }
+  });
+
+  it("replace_in_source edits without replace_all leave a repeated match unchanged, and replace_all true replaces every match", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-replace-all-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    const file = path.join(root, "demo.canvas.tsx");
+    await writeFile(file, "red red", "utf8");
+
+    const once = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      edits: [{ old_string: "red", new_string: "blue" }],
+    });
+    expect(once.isError).toBe(true);
+    expect(once.content[0]!.text).toMatch(/matches 2 places/);
+    expect(await readFile(file, "utf8")).toBe("red red");
+
+    const all = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      edits: [{ old_string: "red", new_string: "blue", replace_all: true }],
+    });
+    expect(all.isError).toBeFalsy();
+    expect(JSON.parse(all.content[0]!.text)).toEqual({ ok: true, id: "demo", replacements: 2 });
+    expect(await readFile(file, "utf8")).toBe("blue blue");
+  });
+
+  it("replace_in_source rejects an edit that omits replace_all when the old text matches more than once so it does not replace every match", async () => {
+    const { root, ops } = await tempOps("red red");
+    const file = path.join(root, "demo.canvas.tsx");
+
+    const ambiguous = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      edits: [{ old_string: "red", new_string: "blue" }],
+    });
+    expect(ambiguous.isError).toBe(true);
+    expect(ambiguous.content[0]!.text).toMatch(/matches 2 places/);
+    expect(await readFile(file, "utf8")).toBe("red red");
   });
 
   it("check_canvas: reports ok, then a build error with line:col after a bad edit; missing id is an error", async () => {

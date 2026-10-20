@@ -55,16 +55,23 @@ export type MoveResult = { ok: true; moved: MovePair[] };
 /** Reply for replace: same `{ ok, id, replacements }` over HTTP and MCP. */
 export type ReplaceResult = { ok: true; id: string; replacements: number };
 
-/** One id from a batch read: the file text, or why that id failed. */
-export type SourceRead = { source: string } | { error: string };
-
-/** Batch read. A missing id stays on that key so the other sources still return. */
-export type ReadSourcesResult = { sources: Record<string, SourceRead> };
+/** One exact replacement. `replace_all` replaces every match; otherwise the text must be unique. */
+export type ReplaceEdit = {
+  old_string: string;
+  new_string: string;
+  replace_all?: boolean;
+};
 
 /** Same reply for check, over HTTP and MCP: does the canvas still bundle? */
 export type CheckResult =
   | { ok: true; id: string }
   | { ok: false; id: string; error: string };
+
+/** One id from a batch read: the file text, or why that id failed. */
+export type SourceRead = { source: string } | { error: string };
+
+/** Batch read. A missing id stays on that key so the other sources still return. */
+export type ReadSourcesResult = { sources: Record<string, SourceRead> };
 
 export type ListCanvasesOptions = {
   folder?: string;
@@ -83,12 +90,20 @@ export type CanvasEditOps = {
   readSources(ids: string[]): Promise<ReadSourcesResult>;
   /** Every write takes optional `meta` (who, why, topic) for the change log. */
   writeSource(id: string, source: string, meta?: WriteMeta): Promise<void>;
-  /** Replace exact text in place; the rest of the file stays byte-identical. */
+  /**
+   * Replace exact text in place; the rest of the file stays byte-identical.
+   * One old/new pair, or several edits in order, then a single write.
+   */
   replaceInSource(
     id: string,
     oldText: string,
     newText: string,
     replaceAll?: boolean,
+    meta?: WriteMeta,
+  ): Promise<ReplaceResult>;
+  replaceInSource(
+    id: string,
+    edits: readonly ReplaceEdit[],
     meta?: WriteMeta,
   ): Promise<ReplaceResult>;
   /** Bundle the canvas and report errors (`line:col message`) instead of throwing. */
@@ -200,6 +215,28 @@ export type EditOpsOptions = {
   requireLease?: boolean;
 };
 
+function applySourceEdit(
+  source: string,
+  id: string,
+  edit: ReplaceEdit,
+): { next: string; replacements: number } {
+  if (!edit.old_string) {
+    throw new Error("old_string must be non-empty");
+  }
+  // split/join: literal text, so "$&" and friends in new_string are not special.
+  const parts = source.split(edit.old_string);
+  const replacements = parts.length - 1;
+  if (replacements === 0) {
+    throw new Error(`Text to replace was not found in canvas "${id}"`);
+  }
+  if (replacements > 1 && edit.replace_all !== true) {
+    throw new Error(
+      `Text to replace matches ${replacements} places in canvas "${id}"; add surrounding text to make it unique, or set replace_all`,
+    );
+  }
+  return { next: parts.join(edit.new_string), replacements };
+}
+
 /** Shared read/write/search/orient over CanvasStore — HTTP and MCP call only this. */
 export function createCanvasEditOps(
   store: CanvasStore,
@@ -229,6 +266,42 @@ export function createCanvasEditOps(
     } catch (err) {
       console.error("[team-canvas] change log:", err instanceof Error ? err.message : err);
     }
+  }
+
+  // Explicit union so the single old/new call (HTTP) and the edits call both typecheck.
+  async function replaceInSource(
+    id: string,
+    oldTextOrEdits: string | readonly ReplaceEdit[],
+    newTextOrMeta?: string | WriteMeta,
+    replaceAll?: boolean,
+    meta?: WriteMeta,
+  ): Promise<ReplaceResult> {
+    const batch = Array.isArray(oldTextOrEdits);
+    const edits: readonly ReplaceEdit[] = batch
+      ? oldTextOrEdits
+      : [
+          {
+            old_string: oldTextOrEdits,
+            new_string: newTextOrMeta as string,
+            replace_all: replaceAll === true,
+          },
+        ];
+    const writeMeta = batch ? (newTextOrMeta as WriteMeta | undefined) : meta;
+    const normalized = await guard(id, writeMeta);
+    if (edits.length === 0) {
+      throw new Error("edits must be a non-empty list");
+    }
+    const source = await store.readSource(id);
+    // In memory first: a later miss throws before write, so earlier edits are not stored.
+    let next = source;
+    let replacements = 0;
+    for (const edit of edits) {
+      const applied = applySourceEdit(next, id, edit);
+      next = applied.next;
+      replacements += applied.replacements;
+    }
+    await write(id, "replace_in_source", next, normalized, source);
+    return { ok: true, id, replacements };
   }
 
   return {
@@ -273,26 +346,7 @@ export function createCanvasEditOps(
       const result = await bundleCanvas({ source: await store.readSource(id) });
       return result.ok ? { ok: true, id } : { ok: false, id, error: result.error };
     },
-    async replaceInSource(id, oldText, newText, replaceAll = false, meta) {
-      const normalized = await guard(id, meta);
-      if (!oldText) {
-        throw new Error("old_string must be non-empty");
-      }
-      const source = await store.readSource(id);
-      // split/join: literal text, so "$&" and friends in newText are not special.
-      const parts = source.split(oldText);
-      const replacements = parts.length - 1;
-      if (replacements === 0) {
-        throw new Error(`Text to replace was not found in canvas "${id}"`);
-      }
-      if (replacements > 1 && !replaceAll) {
-        throw new Error(
-          `Text to replace matches ${replacements} places in canvas "${id}"; add surrounding text to make it unique, or set replace_all`,
-        );
-      }
-      await write(id, "replace_in_source", parts.join(newText), normalized, source);
-      return { ok: true, id, replacements };
-    },
+    replaceInSource,
     async searchSource(id, query) {
       if (!query) {
         throw new Error("Search query must be non-empty");
