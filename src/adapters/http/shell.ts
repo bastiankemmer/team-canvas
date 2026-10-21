@@ -2,10 +2,11 @@
 
 import type { LinkTree, LinkTreeNode } from "../../app/edit/canvas-link-tree.js";
 import type { TopicView } from "../../app/settle/settlement.js";
+// Packed bin loads the SDK from this tarball. The package name is not an installed dependency.
 import {
   canvasPaletteDark,
   canvasPaletteLight,
-} from "../../sdk/canvas-tokens.js";
+} from "../../../packages/human/dist/index.js";
 
 const chrome = String.raw`
 :root {
