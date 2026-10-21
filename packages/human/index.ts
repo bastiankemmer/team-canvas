@@ -22,6 +22,7 @@ export {
 export type {
   CanvasAction,
   CanvasHostTheme,
+  CanvasStateStore,
   SetCanvasState,
 } from "./hooks.js";
 export {
