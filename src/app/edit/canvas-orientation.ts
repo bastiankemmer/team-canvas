@@ -110,14 +110,8 @@ function findPattern(root: ts.Expression): Pattern | null {
 }
 
 function parse(source: string): { sf: ts.SourceFile; pattern: Pattern | null } {
-  // setParentNodes unused; getText/getStart take sf explicitly.
-  const sf = ts.createSourceFile(
-    "canvas.tsx",
-    source,
-    ts.ScriptTarget.Latest,
-    false,
-    ts.ScriptKind.TSX,
-  );
+  // The .tsx name selects TSX. setParentNodes defaults off; getText/getStart take sf.
+  const sf = ts.createSourceFile("canvas.tsx", source, ts.ScriptTarget.Latest);
   const ret = defaultFunctionReturn(sf);
   return { sf, pattern: ret ? findPattern(ret) : null };
 }
@@ -155,7 +149,13 @@ function contentRanges(sf: ts.SourceFile, el: JsxTag): { start: number; end: num
     }
   }
 
-  visit(el, false);
+  // The element itself is not fillable text. Self-closing attributes stay asChild false;
+  // passing true on the element is the same path and would not change which nodes are visited.
+  if (ts.isJsxElement(el) || ts.isJsxFragment(el)) {
+    ts.forEachChild(el, (c) => visit(c, true));
+  } else {
+    ts.forEachChild(el, (c) => visit(c, false));
+  }
   return ranges;
 }
 
@@ -178,7 +178,9 @@ function slotLabel(tag: string | null): string {
   if (tag === "Button") return "Button label";
   const words = tag
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    // One leading uppercase. A `+` splits at the same character: the previous
+    // replace already broke lower-to-upper runs, so the longer quantifier is the same label.
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
     .toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -188,13 +190,7 @@ function slotLabel(tag: string | null): string {
  * that wraps them. Repeated labels are numbered ("Text 1", "Text 2").
  */
 export function pendingSlots(source: string): OrientSlot[] {
-  const sf = ts.createSourceFile(
-    "canvas.tsx",
-    source,
-    ts.ScriptTarget.Latest,
-    false,
-    ts.ScriptKind.TSX,
-  );
+  const sf = ts.createSourceFile("canvas.tsx", source, ts.ScriptTarget.Latest);
   const found: { id: string; label: string }[] = [];
   const seen = new Set<string>();
   const collect = (text: string, tag: string | null) => {
@@ -255,16 +251,11 @@ export function addOrientedSibling(source: string): AddOrientedTransform {
     clone = clone.slice(0, r.start) + `__tc_slot_${id}__` + clone.slice(r.end);
   }
 
-  // Indent = leading spaces/tabs on the template's line (no regex).
-  let lineStart = 0;
-  const nl = source.lastIndexOf("\n", tStart - 1);
-  if (nl !== -1) lineStart = nl + 1;
+  // Line start is the character after the previous newline. No newline yields -1 + 1 = 0.
+  // The scan stops at the first non-indent, which is `<` at tStart, so the bound is that character.
+  const lineStart = source.lastIndexOf("\n", tStart) + 1;
   let indentEnd = lineStart;
-  while (indentEnd < tStart) {
-    const ch = source[indentEnd];
-    if (ch !== " " && ch !== "\t") break;
-    indentEnd++;
-  }
+  while (source[indentEnd] === " " || source[indentEnd] === "\t") indentEnd++;
   const indent = source.slice(lineStart, indentEnd);
   const next = source.slice(0, tEnd) + `\n${indent}${clone}` + source.slice(tEnd);
   // Read the slots back from the finished source: document order, with labels.

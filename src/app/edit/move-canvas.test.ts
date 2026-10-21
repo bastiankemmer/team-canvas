@@ -2,10 +2,10 @@ import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { callMcpTool } from "@team-canvas/mcp";
 import { LocalFilesystemCanvasStore } from "../../adapters/store/local-fs-canvas-store.js";
-import { callMcpTool } from "../../adapters/mcp/mcp-server.js";
-import { createCanvasEditOps } from "./canvas-edit-ops.js";
 import type { CanvasStore } from "../../ports/canvas-store.js";
+import { createCanvasEditOps } from "./canvas-edit-ops.js";
 
 const SOURCE = "export default function Demo() { return null }\n";
 

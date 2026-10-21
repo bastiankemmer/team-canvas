@@ -1,11 +1,87 @@
 import type { Readable, Writable } from "node:stream";
-import {
-  createCanvasEditOps,
-  type CanvasEditOps,
-  type ReplaceEdit,
-} from "../../app/edit/canvas-edit-ops.js";
-import type { TopicStatus, WriteMeta } from "../../app/settle/settlement.js";
-import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
+
+/** Who/why/topic on a write. Same shape the shell's change log accepts. */
+type WriteMeta = { actor?: string; reason?: string; topic?: string };
+
+type ReplaceEdit = {
+  old_string: string;
+  new_string: string;
+  replace_all?: boolean;
+};
+
+type TopicStatus = "open" | "escalated" | "settled";
+
+/**
+ * Edit operations and settlement the handlers call.
+ * Structural so this package does not import the shell; the shell passes the real object.
+ */
+type McpCanvasOps = {
+  settlement: {
+    acquireLease(input: {
+      actor: unknown;
+      canvas: unknown;
+      ttlSeconds?: unknown;
+    }): Promise<unknown>;
+    releaseLease(input: { actor: unknown; canvas: unknown }): Promise<unknown>;
+    listLeases(): Promise<unknown>;
+    declareIntent(input: {
+      actor: unknown;
+      topic: unknown;
+      plan: unknown;
+      reason?: unknown;
+      canvas?: unknown;
+      ttlSeconds?: unknown;
+    }): Promise<unknown>;
+    listTopics(status?: TopicStatus): Promise<unknown>;
+    escalate(actor: unknown, topic: unknown): Promise<unknown>;
+    listChanges(filter?: {
+      canvas?: string;
+      topic?: string;
+      actor?: string;
+      limit?: number;
+    }): Promise<unknown>;
+    takeNotices(actor: string): Promise<unknown[]>;
+  };
+  listCanvases(opts?: {
+    folder?: string;
+    type?: "canvas" | "folder";
+    depth?: number;
+  }): Promise<unknown>;
+  createCanvas(id: string, source?: string, meta?: WriteMeta): Promise<unknown>;
+  readSource(id: string): Promise<unknown>;
+  readSources(ids: string[]): Promise<unknown>;
+  writeSource(id: string, source: string, meta?: WriteMeta): Promise<void>;
+  replaceInSource(
+    id: string,
+    oldText: string,
+    newText: string,
+    replaceAll?: boolean,
+    meta?: WriteMeta,
+  ): Promise<unknown>;
+  replaceInSource(
+    id: string,
+    edits: readonly ReplaceEdit[],
+    meta?: WriteMeta,
+  ): Promise<unknown>;
+  checkCanvas(id: string): Promise<unknown>;
+  searchSource(id: string, query: string): Promise<unknown>;
+  listLinks(id: string): Promise<unknown>;
+  backlinks(id: string): Promise<unknown>;
+  searchLinked(id: string, query: string): Promise<unknown>;
+  inspectOrientation(id: string): Promise<unknown>;
+  addOriented(id: string, meta?: WriteMeta): Promise<unknown>;
+  fillSlots(
+    id: string,
+    slots: Record<string, string>,
+    meta?: WriteMeta,
+  ): Promise<unknown>;
+  move(
+    from: string,
+    to: string,
+    opts?: { folder?: boolean; match?: string },
+    meta?: WriteMeta,
+  ): Promise<unknown>;
+};
 
 const TOPIC_STATUSES: TopicStatus[] = ["open", "escalated", "settled"];
 
@@ -416,7 +492,7 @@ function requireSlotRecord(args: Record<string, unknown>): Record<string, string
 }
 
 type ToolHandler = (
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   args: Record<string, unknown>,
 ) => Promise<unknown>;
 
@@ -519,7 +595,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
 
 /** Invoke shared edit ops by MCP tool name. */
 export async function callMcpTool(
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   name: string,
   args: Record<string, unknown> = {},
 ): Promise<McpToolResult> {
@@ -540,7 +616,7 @@ export async function callMcpTool(
  * result keeps its shape. Delivered once. A failing notice read never fails the tool.
  */
 async function withNotices(
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   args: Record<string, unknown>,
   result: McpToolResult,
 ): Promise<McpToolResult> {
@@ -573,7 +649,7 @@ export type JsonRpcResponse = {
 };
 
 type RpcHandler = (
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   id: JsonRpcId,
   params: unknown,
 ) => Promise<JsonRpcResponse>;
@@ -615,7 +691,7 @@ const RPC_HANDLERS: Record<string, RpcHandler> = {
 };
 
 export async function handleMcpJsonRpc(
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   request: JsonRpcRequest,
 ): Promise<JsonRpcResponse | null> {
   const id = request.id ?? null;
@@ -638,11 +714,10 @@ export async function handleMcpJsonRpc(
 }
 
 export function encodeMcpMessage(msg: unknown): Buffer {
-  const body = Buffer.from(JSON.stringify(msg), "utf8");
-  const header = Buffer.from(
-    `Content-Length: ${body.length}\r\n\r\n`,
-    "utf8",
-  );
+  // Buffer.from(text) is utf8. Passing "utf8" is the same, and "" still encodes utf8,
+  // so the encoding argument cannot be checked.
+  const body = Buffer.from(JSON.stringify(msg));
+  const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`);
   return Buffer.concat([header, body]);
 }
 
@@ -654,17 +729,17 @@ export function extractMcpMessages(buffer: string): {
   const messages: JsonRpcRequest[] = [];
   let rest = buffer;
 
-  while (rest.length > 0) {
+  // Empty rest is length 0. `> 0` vs `>= 0` is the same: an empty buffer breaks below.
+  while (rest.length) {
     const trimmedStart = rest.trimStart();
     if (trimmedStart.startsWith("{")) {
-      const lead = rest.length - trimmedStart.length;
-      const from = lead > 0 ? rest.slice(lead) : rest;
-      const nl = from.indexOf("\n");
+      // trimStart already dropped the lead; slice(0) would be this same string.
+      // A line that starts with `{` is never empty after trim.
+      const nl = trimmedStart.indexOf("\n");
       if (nl === -1) break;
-      const line = from.slice(0, nl).trim();
-      rest = from.slice(nl + 1);
-      // ponytail: trim already dropped blank lines via trimStart on next iter; parse non-empty only
-      if (line.length > 0) messages.push(JSON.parse(line) as JsonRpcRequest);
+      const line = trimmedStart.slice(0, nl).trim();
+      rest = trimmedStart.slice(nl + 1);
+      messages.push(JSON.parse(line) as JsonRpcRequest);
       continue;
     }
 
@@ -688,22 +763,20 @@ export function extractMcpMessages(buffer: string): {
 }
 
 export type StartMcpStdioOptions = {
-  root: string;
   stdin?: Readable;
   stdout?: Writable;
-  ops?: CanvasEditOps;
+  /** Edit operations from the shell. This package does not open a canvas store. */
+  ops: McpCanvasOps;
 };
 
 /**
- * Start stdio MCP against a canvases root. Does not start HTTP.
- * Tools call createCanvasEditOps(LocalFilesystemCanvasStore(root)).
+ * Start stdio MCP. Does not start HTTP and does not open a filesystem.
+ * The shell builds the canvas store and passes `ops`.
  */
 export async function startMcpStdioServer(
   options: StartMcpStdioOptions,
 ): Promise<void> {
-  const ops =
-    options.ops ??
-    createCanvasEditOps(LocalFilesystemCanvasStore(options.root));
+  const ops = options.ops;
   const stdin = options.stdin ?? process.stdin;
   const stdout = options.stdout ?? process.stdout;
 
@@ -740,7 +813,9 @@ export async function startMcpStdioServer(
     let queue: Promise<void> = Promise.resolve();
     stdin.on("error", reject);
     stdin.on("data", (chunk: Buffer | string) => {
-      pending += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      // String#toString ignores the encoding and returns the text. Buffer#toString("") throws,
+      // so a wrong encoding fails instead of silently matching utf8.
+      pending += (chunk as Buffer).toString("utf8");
       queue = queue.then(processPending).catch(reject);
     });
     stdin.on("end", () => void queue.then(() => resolve()));

@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import { LocalFilesystemCanvasStore } from "../../adapters/store/local-fs-canvas-store.js";
 import type { CanvasStore } from "../../ports/canvas-store.js";
 import { bundleCanvas } from "../build/bundle-canvas.js";
+import { sha } from "../settle/doc.js";
 import { createCanvasEditOps, type CanvasBacklink } from "./canvas-edit-ops.js";
+import { starterSource } from "./new-canvas.js";
 
 describe("canvas edit ops", () => {
   it("@task-1: readSource returns full source, writeSource replaces disk, searchSource returns line and snippet, unsafe ids rejected, empty query fails", async () => {
@@ -873,5 +875,227 @@ describe("canvas edit ops", () => {
     for (const bad of ["a\\b", ".."]) {
       await expect(ops.listLinks(bad), bad).rejects.toThrow(/Invalid canvas id/);
     }
+  });
+
+  it("returns folder ids sorted, and rejects a type that is not canvas or folder and a depth that is not a positive integer", async () => {
+    const store = {
+      list: async () => ["z/item", "a/item", "m/n/item"],
+      readSource: async () => {
+        throw new Error("no read");
+      },
+      writeSource: async () => {},
+      readState: async () => ({}),
+      writeState: async () => {},
+    } satisfies CanvasStore;
+    const ops = createCanvasEditOps(store, { requireLease: false });
+
+    expect(await ops.listCanvases({ type: "folder" })).toEqual(["a", "m", "m/n", "z"]);
+    expect(await ops.listCanvases({ type: "folder", depth: 1 })).toEqual(["a", "m", "z"]);
+    await expect(ops.listCanvases({ type: "page" as "canvas" })).rejects.toThrow(
+      'type must be "canvas" or "folder"',
+    );
+    for (const depth of [0, -1, 1.5]) {
+      await expect(ops.listCanvases({ depth })).rejects.toThrow("depth must be a positive integer");
+    }
+  });
+
+  it("requires an actor when leases stay on, and the actor checked is the one on the write", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-lease-"));
+    await writeFile(path.join(root, "demo.canvas.tsx"), "old", "utf8");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+
+    await expect(ops.writeSource("demo", "next")).rejects.toThrow(
+      'A write needs an actor: pass actor, after acquire_lease on "demo"',
+    );
+    await ops.settlement.acquireLease({ actor: "ada", canvas: "demo" });
+    await expect(ops.writeSource("demo", "next", { actor: "bob" })).rejects.toThrow(/leased by ada/);
+    await ops.writeSource("demo", "next", { actor: "ada" });
+    expect(await ops.readSource("demo")).toBe("next");
+  });
+
+  it("uses the starter source when the create source is empty or only whitespace, and keeps a non-blank source", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-starter-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+
+    await ops.createCanvas("fresh", "");
+    await ops.createCanvas("blank", " \t\n");
+    expect(await ops.readSource("fresh")).toBe(starterSource("fresh"));
+    expect(await ops.readSource("blank")).toBe(starterSource("blank"));
+    await ops.createCanvas("kept", "  export default () => null\n");
+    expect(await ops.readSource("kept")).toBe("  export default () => null\n");
+  });
+
+  it("records a null before-image for a new canvas without reading it, and records the source replace already read", async () => {
+    const files = new Map<string, string>();
+    const state = new Map<string, unknown>();
+    let reads = 0;
+    const store: CanvasStore = {
+      list: async () => [...files.keys()],
+      readSource: async () => {
+        reads += 1;
+        if (reads > 1) throw new Error("reread");
+        const hit = files.get("demo");
+        if (hit === undefined) throw new Error("unread");
+        return hit;
+      },
+      writeSource: async (id, source) => {
+        files.set(id, source);
+      },
+      readState: async (id) => {
+        if (!state.has(id)) {
+          const err = new Error("ENOENT");
+          (err as { code: string }).code = "ENOENT";
+          throw err;
+        }
+        return state.get(id);
+      },
+      writeState: async (id, value) => {
+        state.set(id, value);
+      },
+      updateState: async (id, update) => {
+        state.set(id, await update(state.get(id)));
+      },
+    };
+    const ops = createCanvasEditOps(store, { requireLease: false });
+
+    await ops.createCanvas("fresh", "");
+    expect(reads).toBe(0);
+    expect(files.get("fresh")).toBe(starterSource("fresh"));
+    const created = await ops.settlement.listChanges({ canvas: "fresh" });
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      tool: "create_canvas",
+      canvas: "fresh",
+      before: null,
+      after: sha(starterSource("fresh")),
+    });
+
+    files.set("demo", "alpha beta");
+    reads = 0;
+    await ops.replaceInSource("demo", "alpha", "gamma");
+    expect(reads).toBe(1);
+    expect(files.get("demo")).toBe("gamma beta");
+    const replaced = await ops.settlement.listChanges({ canvas: "demo" });
+    expect(replaced).toHaveLength(1);
+    expect(replaced[0]).toMatchObject({
+      tool: "replace_in_source",
+      before: sha("alpha beta"),
+      after: sha("gamma beta"),
+    });
+  });
+
+  it("records add_oriented and fill_slots as the tool names on the write", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-orient-log-"));
+    const source = `export default function T() {
+  return (
+    <Stack>
+      <Card>a</Card>
+      <Card>b</Card>
+    </Stack>
+  );
+}
+`;
+    await writeFile(path.join(root, "cards.canvas.tsx"), source, "utf8");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    const added = await ops.addOriented("cards");
+    const filled = await ops.fillSlots("cards", { [added.slots[0]!.id]: "Z" });
+    expect(filled.slots).toEqual([]);
+    const tools = (await ops.settlement.listChanges({ canvas: "cards" })).map((entry) => entry.tool);
+    expect(tools).toEqual(["add_oriented", "fill_slots"]);
+  });
+
+  it("refuses a move unless pathKind, moveCanvas, and moveDir are all set", async () => {
+    const io = {
+      list: async () => ["a"],
+      readSource: async () => "s",
+      writeSource: async () => {},
+      readState: async () => ({}),
+      writeState: async () => {},
+      updateState: async () => {},
+    };
+    const opsOf = (extra: Partial<CanvasStore>) =>
+      createCanvasEditOps({ ...io, ...extra }, { requireLease: false });
+    await expect(
+      opsOf({ moveCanvas: async () => {}, moveDir: async () => {} }).move("a", "b"),
+    ).rejects.toThrow(/cannot move/);
+    await expect(
+      opsOf({ pathKind: async () => "canvas", moveDir: async () => {} }).move("a", "b"),
+    ).rejects.toThrow(/cannot move/);
+    await expect(
+      opsOf({ pathKind: async () => "canvas", moveCanvas: async () => {} }).move("a", "b"),
+    ).rejects.toThrow(/cannot move/);
+  });
+
+  it("renames a directory with moveDir and a canvas with moveCanvas, and passes match into the plan", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-move-branch-"));
+    const sourceA = "export default function A() { return null }\n";
+    const sourceB = "export default function B() { return null }\n";
+    await mkdir(path.join(root, "notes"), { recursive: true });
+    await writeFile(path.join(root, "notes", "a.canvas.tsx"), sourceA, "utf8");
+    await writeFile(path.join(root, "notes", "b.canvas.tsx"), sourceB, "utf8");
+    await writeFile(path.join(root, "notes", "keep.txt"), "stay\n", "utf8");
+    await writeFile(path.join(root, "solo.canvas.tsx"), sourceA, "utf8");
+    await mkdir(path.join(root, "box"), { recursive: true });
+    await writeFile(path.join(root, "box", "a.canvas.tsx"), sourceA, "utf8");
+    await writeFile(path.join(root, "box", "onlyTest.canvas.tsx"), sourceB, "utf8");
+
+    const inner = LocalFilesystemCanvasStore(root);
+    const calls: string[] = [];
+    const reads: string[] = [];
+    const store: CanvasStore = {
+      ...inner,
+      pathKind: (id) => inner.pathKind!(id),
+      readSource: async (id) => {
+        reads.push(id);
+        return inner.readSource(id);
+      },
+      moveDir: async (from, to) => {
+        calls.push(`dir ${from} ${to}`);
+        await inner.moveDir!(from, to);
+      },
+      moveCanvas: async (from, to) => {
+        calls.push(`canvas ${from} ${to}`);
+        await inner.moveCanvas!(from, to);
+      },
+    };
+    const ops = createCanvasEditOps(store, { requireLease: false });
+
+    const folder = await ops.move("notes", "out", { folder: true });
+    expect(folder.moved).toEqual([
+      { from: "notes/a", to: "out/a" },
+      { from: "notes/b", to: "out/b" },
+    ]);
+    expect(calls).toEqual(["dir notes out"]);
+    expect(reads).toEqual(["notes/a", "notes/b"]);
+    expect(await readFile(path.join(root, "out", "a.canvas.tsx"), "utf8")).toBe(sourceA);
+    expect(await readFile(path.join(root, "out", "b.canvas.tsx"), "utf8")).toBe(sourceB);
+    expect(await readFile(path.join(root, "out", "keep.txt"), "utf8")).toBe("stay\n");
+    const logged = await ops.settlement.listChanges({});
+    const byCanvas = new Map(logged.map((entry) => [entry.canvas, entry]));
+    expect(byCanvas.get("out/a")).toMatchObject({
+      tool: "move",
+      canvas: "out/a",
+      before: null,
+      after: sha(sourceA),
+    });
+    expect(byCanvas.get("out/b")).toMatchObject({
+      tool: "move",
+      canvas: "out/b",
+      before: null,
+      after: sha(sourceB),
+    });
+
+    calls.length = 0;
+    const one = await ops.move("solo", "proj/solo");
+    expect(one.moved).toEqual([{ from: "solo", to: "proj/solo" }]);
+    expect(calls).toEqual(["canvas solo proj/solo"]);
+    expect(await readFile(path.join(root, "proj", "solo.canvas.tsx"), "utf8")).toBe(sourceA);
+
+    const matched = await ops.move("box", "picked", { match: "*Test.canvas.tsx" });
+    expect(matched.moved).toEqual([{ from: "box/onlyTest", to: "picked/onlyTest" }]);
+    expect(calls).toContain("canvas box/onlyTest picked/onlyTest");
+    expect(calls.some((call) => call.startsWith("dir "))).toBe(false);
+    expect(await readFile(path.join(root, "box", "a.canvas.tsx"), "utf8")).toBe(sourceA);
+    expect(await readFile(path.join(root, "picked", "onlyTest.canvas.tsx"), "utf8")).toBe(sourceB);
   });
 });

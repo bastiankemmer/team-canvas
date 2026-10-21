@@ -35,9 +35,9 @@ function decodeJsxEntities(value: string): string {
       if (named) return JSX_NAMED[named]!;
       const hex = num![0] === "x" || num![0] === "X";
       const cp = Number.parseInt(hex ? num!.slice(1) : num!, hex ? 16 : 10);
-      // Surrogates sit inside 0..10FFFF but are not scalar values; other illegal points throw.
-      const scalar =
-        Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff && (cp < 0xd800 || cp > 0xdfff);
+      // The capture is digits only, so cp is an integer >= 0. Those checks cannot fail.
+      // Surrogates sit inside 0..10FFFF but are not scalar values; a higher point throws.
+      const scalar = cp <= 0x10ffff && (cp < 0xd800 || cp > 0xdfff);
       return scalar ? String.fromCodePoint(cp) : match;
     },
   );
@@ -62,12 +62,14 @@ function literalTo(el: JsxTag): string | null {
 }
 
 function safeTo(to: string): boolean {
+  // Starts allowed. An empty catch leaves that, so the invalid id is kept and the caller sees it.
+  let allowed = true;
   try {
     assertSafeCanvasId(to);
-    return true;
   } catch {
-    return false;
+    allowed = false;
   }
+  return allowed;
 }
 
 /** Direct text and string-literal children, or null when anything else is present. */
@@ -98,15 +100,9 @@ function linkLabel(el: ts.JsxElement): string | null {
  * Upgrade path: an incremental index if a store is too large to re-read on every backlinks call — not a new database.
  */
 export function extractCanvasLinks(source: string): CanvasLinkHit[] {
-  // setParentNodes unused; positions are read with the source file argument.
   // Parse diagnostics are ignored: recovered JSX still counts.
-  const sf = ts.createSourceFile(
-    "canvas.tsx",
-    source,
-    ts.ScriptTarget.Latest,
-    false,
-    ts.ScriptKind.TSX,
-  );
+  // The .tsx name selects TSX. An explicit script kind would still parse if the name were wrong.
+  const sf = ts.createSourceFile("canvas.tsx", source, ts.ScriptTarget.Latest);
   const links: CanvasLinkHit[] = [];
   const visit = (node: ts.Node) => {
     if (
