@@ -1,4 +1,24 @@
 import type { Readable, Writable } from "node:stream";
+// Keeps the layer edge on this source file. Erased from dist; see the load below.
+import type {} from "../ontology/index.js";
+import type {} from "../ai/index.js";
+
+// Compiled to dist/index.js, one directory deeper than this file, so a relative
+// specifier here would miss ontology and ai. A packed install has no @team-canvas/* name.
+const { collect, collectBySubject } = (await import(
+  new URL("../../ontology/index.js", import.meta.url).href,
+)) as {
+  collect: (sources: readonly string[], factId: string) => string;
+  collectBySubject: (sources: readonly string[], subject: string) => string;
+};
+const { areaRead } = (await import(
+  new URL("../../ai/index.js", import.meta.url).href,
+)) as {
+  areaRead: (
+    areaId: string,
+    read: (areaId: string) => string | Promise<string>,
+  ) => string | Promise<string>;
+};
 
 /** Who/why/topic on a write. Same shape the shell's change log accepts. */
 type WriteMeta = { actor?: string; reason?: string; topic?: string };
@@ -81,6 +101,8 @@ type McpCanvasOps = {
     opts?: { folder?: boolean; match?: string },
     meta?: WriteMeta,
   ): Promise<unknown>;
+  /** Whole derived file for a canvas id. The shell opens it; this package does not. */
+  readDerived(areaId: string): Promise<string>;
 };
 
 const TOPIC_STATUSES: TopicStatus[] = ["open", "escalated", "settled"];
@@ -412,6 +434,36 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
       },
     },
   },
+  {
+    name: "collect",
+    description:
+      "Return Turtle for a fact id, or for every fact with a subject. The result is that Turtle string only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fact_id: {
+          type: "string",
+          description: "Fact id. Omit when passing subject.",
+        },
+        subject: {
+          type: "string",
+          description: "Subject. Omit when passing fact_id.",
+        },
+      },
+    },
+  },
+  {
+    name: "read-area",
+    description:
+      "Return the whole derived file for a canvas id. The id is not a heading, so this is the whole file, not a slice.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Canvas id." },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 export type McpToolResult = {
@@ -495,6 +547,19 @@ type ToolHandler = (
   ops: McpCanvasOps,
   args: Record<string, unknown>,
 ) => Promise<unknown>;
+
+type SourceEntry = { source: string } | { error: string };
+
+// Canvas texts only. The derived file is not a fact source, and this package does not open the store.
+async function canvasSourceTexts(ops: McpCanvasOps): Promise<string[]> {
+  const ids = (await ops.listCanvases()) as string[];
+  const { sources } = (await ops.readSources(ids)) as { sources: Record<string, SourceEntry> };
+  return ids.map((id) => {
+    const entry = sources[id];
+    if (entry && "source" in entry) return entry.source;
+    throw new Error(entry && "error" in entry ? entry.error : `Missing canvas source: ${id}`);
+  });
+}
 
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_canvases: (ops, args) =>
@@ -591,6 +656,19 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       actor: optionalString(args, "actor"),
       limit: typeof args.limit === "number" ? args.limit : undefined,
     }),
+  collect: async (ops, args) => {
+    const factId = optionalString(args, "fact_id");
+    const subject = optionalString(args, "subject");
+    // One call is one fact or one subject. Both would mix two Turtle documents.
+    if ((factId === undefined) === (subject === undefined)) {
+      throw new Error("Pass either fact_id or subject");
+    }
+    const sources = await canvasSourceTexts(ops);
+    if (factId !== undefined) return collect(sources, factId);
+    return collectBySubject(sources, subject as string);
+  },
+  "read-area": async (ops, args) =>
+    areaRead(requireString(args, "id"), (areaId) => ops.readDerived(areaId)),
 };
 
 /** Invoke shared edit ops by MCP tool name. */

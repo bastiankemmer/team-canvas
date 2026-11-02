@@ -101,6 +101,8 @@ describe("mcp stdio server", () => {
       "list_topics",
       "escalate_topic",
       "list_changes",
+      "collect",
+      "read-area",
     ]);
 
     const list = await callMcpTool(ops, "list_canvases");
@@ -367,6 +369,8 @@ describe("mcp stdio server", () => {
       "list_topics",
       "escalate_topic",
       "list_changes",
+      "collect",
+      "read-area",
     ]);
     expect(
       MCP_TOOL_DEFS.find((t) => t.name === "read_source")?.inputSchema,
@@ -778,7 +782,7 @@ describe("mcp stdio server", () => {
         },
       },
     });
-    expect(tools).toHaveLength(22);
+    expect(tools).toHaveLength(24);
   });
 
   it("mutation:extractMcpMessages: NDJSON, framing, incomplete, missing length", () => {

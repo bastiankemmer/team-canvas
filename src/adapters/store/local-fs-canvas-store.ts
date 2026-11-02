@@ -124,7 +124,9 @@ function assertInsideStore(root: string, id: string, target: string): void {
   if (outsideRoot(path.relative(rootReal, realpathSync(existing)))) invalidCanvasId(id);
 }
 
-export function LocalFilesystemCanvasStore(root: string): CanvasStore {
+export function LocalFilesystemCanvasStore(root: string): CanvasStore & {
+  readDerived(id: string): Promise<string>;
+} {
   const resolve = (id: string, suffix: string) => {
     assertSafeCanvasId(id);
     const target = path.join(root, `${id}${suffix}`);
@@ -154,6 +156,11 @@ export function LocalFilesystemCanvasStore(root: string): CanvasStore {
 
     async readSource(id) {
       return readFile(resolve(id, CANVAS_SUFFIX), "utf8");
+    },
+
+    // Same path checks as the canvas file. Callers must not build <id>.md themselves.
+    async readDerived(id) {
+      return readFile(resolve(id, ".md"), "utf8");
     },
 
     async writeSource(id, source) {

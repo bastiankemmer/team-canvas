@@ -214,4 +214,27 @@ describe("literal facts and Turtle", () => {
     expect(collect([src], "sub")).toBe("");
     expect(collect([src], "missing")).toBe("");
   });
+
+  it("returns one Turtle document for every fact with that subject, in source order, so a placeholder between the blocks is not the ontology", () => {
+    const src = wrap(
+      `<Fact ${factAttrs} /><Fact id="id-2" subject="sub" claim="two" area="canvas/id" heading="h2" />`,
+    );
+    expect(collectBySubject([src], "sub")).toBe(
+      [
+        "@prefix tc: <urn:team-canvas:ontology#> .",
+        "<urn:team-canvas:fact:id-1> tc:type tc:Fact ;",
+        '  tc:subject "sub" ;',
+        '  tc:claim "claim" ;',
+        '  tc:area "canvas/id" ;',
+        '  tc:heading "head" .',
+        "<urn:team-canvas:fact:id-2> tc:type tc:Fact ;",
+        '  tc:subject "sub" ;',
+        '  tc:claim "two" ;',
+        '  tc:area "canvas/id" ;',
+        '  tc:heading "h2" .',
+        "",
+      ].join("\n"),
+    );
+    expect(collect([src], "id-2")).toBe(render({ ...fields, id: "id-2", claim: "two", heading: "h2" }));
+  });
 });

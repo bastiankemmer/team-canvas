@@ -1061,10 +1061,13 @@ describe("canvas edit ops", () => {
     const ops = createCanvasEditOps(store, { requireLease: false });
 
     const folder = await ops.move("notes", "out", { folder: true });
-    expect(folder.moved).toEqual([
-      { from: "notes/a", to: "out/a" },
-      { from: "notes/b", to: "out/b" },
-    ]);
+    expect(folder).toEqual({
+      ok: true,
+      moved: [
+        { from: "notes/a", to: "out/a" },
+        { from: "notes/b", to: "out/b" },
+      ],
+    });
     expect(calls).toEqual(["dir notes out"]);
     expect(reads).toEqual(["notes/a", "notes/b"]);
     expect(await readFile(path.join(root, "out", "a.canvas.tsx"), "utf8")).toBe(sourceA);
@@ -1087,15 +1090,65 @@ describe("canvas edit ops", () => {
 
     calls.length = 0;
     const one = await ops.move("solo", "proj/solo");
-    expect(one.moved).toEqual([{ from: "solo", to: "proj/solo" }]);
+    expect(one).toEqual({ ok: true, moved: [{ from: "solo", to: "proj/solo" }] });
     expect(calls).toEqual(["canvas solo proj/solo"]);
     expect(await readFile(path.join(root, "proj", "solo.canvas.tsx"), "utf8")).toBe(sourceA);
 
     const matched = await ops.move("box", "picked", { match: "*Test.canvas.tsx" });
-    expect(matched.moved).toEqual([{ from: "box/onlyTest", to: "picked/onlyTest" }]);
+    expect(matched).toEqual({
+      ok: true,
+      moved: [{ from: "box/onlyTest", to: "picked/onlyTest" }],
+    });
     expect(calls).toContain("canvas box/onlyTest picked/onlyTest");
     expect(calls.some((call) => call.startsWith("dir "))).toBe(false);
     expect(await readFile(path.join(root, "box", "a.canvas.tsx"), "utf8")).toBe(sourceA);
     expect(await readFile(path.join(root, "picked", "onlyTest.canvas.tsx"), "utf8")).toBe(sourceB);
+  });
+
+  it("limits a canvas list to a folder prefix and a depth, and rejects a folder that leaves the store, so an unfiltered list or an off-by-one depth is a different set", async () => {
+    const store = {
+      list: async () => [
+        "ab",
+        "notes/ab",
+        "notes/n/item",
+        "other/notes",
+        "m/child",
+        "m/n/item",
+      ],
+      readSource: async () => {
+        throw new Error("no read");
+      },
+      writeSource: async () => {},
+      readState: async () => ({}),
+      writeState: async () => {},
+    } satisfies CanvasStore;
+    const ops = createCanvasEditOps(store, { requireLease: false });
+
+    expect(await ops.listCanvases({ folder: "notes" })).toEqual(["notes/ab", "notes/n/item"]);
+    expect(await ops.listCanvases({ folder: "notes", depth: 1 })).toEqual(["notes/ab"]);
+    expect(await ops.listCanvases({ depth: 1 })).toEqual(["ab"]);
+    expect(await ops.listCanvases({ folder: "m", type: "folder" })).toEqual(["m/n"]);
+    expect(await ops.listCanvases({ folder: "m", depth: 1 })).toEqual(["m/child"]);
+    await expect(ops.listCanvases({ folder: ".." })).rejects.toThrow(/Invalid canvas id/);
+    await expect(ops.listCanvases({ folder: "a/../b" })).rejects.toThrow(/Invalid canvas id/);
+  });
+
+  it("logs write_source and the source that was replaced when the before image is omitted, so a blank tool name is not the write that landed", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-write-log-"));
+    const previous = "export default function Demo() { return null }\n";
+    const next = "export default function Demo() { return <p>next</p> }\n";
+    await writeFile(path.join(root, "demo.canvas.tsx"), previous, "utf8");
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+
+    await ops.writeSource("demo", next);
+
+    const [entry] = await ops.settlement.listChanges({ canvas: "demo" });
+    expect(entry).toMatchObject({
+      tool: "write_source",
+      canvas: "demo",
+      before: sha(previous),
+      after: sha(next),
+    });
+    expect(await ops.readSource("demo")).toBe(next);
   });
 });

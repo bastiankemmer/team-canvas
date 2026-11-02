@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -12,7 +12,12 @@ import {
   MCP_TOOL_DEFS,
   startMcpStdioServer,
 } from "@team-canvas/mcp";
+import {
+  dependencyViolations,
+  productionSources,
+} from "../../../test/layer-package-imports.js";
 import { createCanvasEditOps } from "../../app/edit/canvas-edit-ops.js";
+import { startHttpServer } from "../http/http-server.js";
 import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
 
 const CURRENT_TOOLS = [
@@ -38,19 +43,60 @@ const CURRENT_TOOLS = [
   "list_topics",
   "escalate_topic",
   "list_changes",
+  "collect",
+  "read-area",
 ];
 
-const SOURCE = "export default function Kept() { return null }\n";
+const CANVAS_ID = "notes/alpha";
+const SOURCE = 'export default function Alpha() { return "notes-alpha-canvas" }\n';
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../..",
 );
 
+function clientFrames(): Buffer {
+  return Buffer.concat([
+    encodeMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    encodeMcpMessage({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "read_source", arguments: { id: CANVAS_ID } },
+    }),
+    encodeMcpMessage({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "list_canvases", arguments: {} },
+    }),
+  ]);
+}
+
+type Listed = { result?: { tools?: { name: string }[] } };
+type Called = { result?: { content?: { text: string }[]; isError?: boolean } };
+
+function expectClientSession(messages: unknown[]) {
+  const listed = messages[0] as Listed;
+  const names = listed.result?.tools?.map((tool) => tool.name);
+  expect(names).toEqual(CURRENT_TOOLS);
+
+  const read = messages[1] as Called;
+  expect(read.result?.isError).toBe(false);
+  expect(read.result?.content?.[0]?.text).toBe(SOURCE);
+
+  const canvases = messages[2] as Called;
+  expect(canvases.result?.isError).toBe(false);
+  const ids = JSON.parse(canvases.result?.content?.[0]?.text ?? "null") as unknown;
+  expect(Array.isArray(ids)).toBe(true);
+  expect(ids).toContain(CANVAS_ID);
+}
+
 describe("mcp package tools", () => {
-  it("lists the current tools from the mcp package and read_source returns the canvas in the directory the shell was given, so a client keeps those tools and the server reads the store the shell passed in", async () => {
+  it("keeps the existing MCP tools and returns notes/alpha from the store the shell was given, so collect and read-area do not replace a client call or become an HTTP route", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-pkg-"));
-    await writeFile(path.join(root, "kept.canvas.tsx"), SOURCE, "utf8");
+    await mkdir(path.join(root, "notes"));
+    await writeFile(path.join(root, "notes", "alpha.canvas.tsx"), SOURCE, "utf8");
     const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), {
       requireLease: false,
     });
@@ -61,65 +107,42 @@ describe("mcp package tools", () => {
     stdout.on("data", (chunk: Buffer | string) => {
       out += typeof chunk === "string" ? chunk : chunk.toString("utf8");
     });
+    const frames = clientFrames();
     const done = startMcpStdioServer({ stdin, stdout, ops });
-    stdin.write(
-      Buffer.concat([
-        encodeMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-        encodeMcpMessage({
-          jsonrpc: "2.0",
-          id: 2,
-          method: "tools/call",
-          params: { name: "read_source", arguments: { id: "kept" } },
-        }),
-      ]),
-    );
+    stdin.write(frames);
     stdin.end();
     await done;
 
     const { messages } = extractMcpMessages(out);
-    const listed = messages[0] as {
-      result?: { tools?: { name: string }[] };
-    };
-    const names = listed.result?.tools?.map((tool) => tool.name);
-    expect(names).toEqual(CURRENT_TOOLS);
-    expect(names).not.toContain("collect");
-    expect(names).not.toContain("read-area");
-    expect(listed.result?.tools).toEqual(MCP_TOOL_DEFS);
+    expectClientSession(messages);
+    expect((messages[0] as Listed).result?.tools).toEqual(MCP_TOOL_DEFS);
 
-    const called = messages[1] as {
-      result?: { content?: { text: string }[]; isError?: boolean };
-    };
-    expect(called.result?.isError).toBe(false);
-    expect(called.result?.content?.[0]?.text).toBe(SOURCE);
-
-    const direct = await callMcpTool(ops, "read_source", { id: "kept" });
-    expect(called.result).toEqual(direct);
+    const direct = await callMcpTool(ops, "read_source", { id: CANVAS_ID });
+    expect((messages[1] as Called).result).toEqual(direct);
 
     // The bin is the shell a client starts. It must open this directory and pass that store in.
-    const payload = Buffer.concat([
-      encodeMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-      encodeMcpMessage({
-        jsonrpc: "2.0",
-        id: 2,
-        method: "tools/call",
-        params: { name: "read_source", arguments: { id: "kept" } },
-      }),
-    ]).toString("utf8");
     const shell = spawnSync(
       process.execPath,
       [path.join(repoRoot, "dist/cli.js"), "mcp", root],
-      { input: payload, encoding: "utf8" },
+      { input: frames.toString("utf8"), encoding: "utf8" },
     );
-    expect(shell.status).toBe(0);
-    const fromShell = extractMcpMessages(shell.stdout).messages;
-    const shellListed = fromShell[0] as {
-      result?: { tools?: { name: string }[] };
-    };
-    const shellCalled = fromShell[1] as {
-      result?: { content?: { text: string }[]; isError?: boolean };
-    };
-    expect(shellListed.result?.tools?.map((tool) => tool.name)).toEqual(CURRENT_TOOLS);
-    expect(shellCalled.result?.isError).toBe(false);
-    expect(shellCalled.result?.content?.[0]?.text).toBe(SOURCE);
+    expect(shell.status, shell.stderr).toBe(0);
+    expectClientSession(extractMcpMessages(shell.stdout).messages);
+
+    const server = await startHttpServer({ root, host: "127.0.0.1", port: 0 });
+    try {
+      for (const route of ["/collect", "/api/collect", "/read-area", "/api/read-area"]) {
+        for (const method of ["GET", "POST"] as const) {
+          const response = await fetch(`${server.url}${route}`, { method });
+          expect(response.status, `${method} ${route}`).toBe(404);
+          expect(await response.text()).not.toContain("notes-alpha-canvas");
+        }
+      }
+    } finally {
+      await server.close();
+    }
+
+    // Ontology and human stay closed, ai may reach ontology only, and mcp does not reach the shell.
+    expect(dependencyViolations(productionSources(repoRoot))).toEqual([]);
   });
 });

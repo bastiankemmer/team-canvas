@@ -202,7 +202,7 @@ describe("derived canvas markdown", () => {
     expect(lines).toContain("### Blockers");
     expect(lines).toContain("Shipped the store.");
     expect(lines).toContain("Also literal.");
-    expect(lines).toContain("`writeSource`");
+    expect(lines).toContain("writeSource");
     expect(lines).toContain("[Notes](https://example.test/notes)");
     expect(lines).toContain("[Phase 3](team-canvas/knowledge-layers/phase-3)");
     expect(lines).toContain("| Name | Status |");
@@ -261,18 +261,21 @@ describe("derived canvas markdown", () => {
     expect(warn.mock.calls.some((call) => /no-op/i.test(String(call[0])))).toBe(true);
     warn.mockRestore();
 
-    // MCP still has the existing tools. Reading the canvas through them leaves the derived file alone.
+    // Reading the canvas or its derived file through MCP leaves both files alone.
     const toolNames = MCP_TOOL_DEFS.map((tool) => tool.name);
-    expect(toolNames).toHaveLength(22);
-    expect(toolNames).not.toContain("collect");
-    expect(toolNames).not.toContain("read-area");
-    const ops = createCanvasEditOps(store, { requireLease: false });
+    expect(toolNames).toHaveLength(24);
+    expect(toolNames).toContain("collect");
+    expect(toolNames).toContain("read-area");
+    const ops = {
+      ...createCanvasEditOps(store, { requireLease: false }),
+      readDerived: (areaId: string) => store.readDerived(areaId),
+    };
     const readBack = await callMcpTool(ops, "read_source", { id });
     expect(readBack.isError).toBe(false);
     expect(readBack.content[0]?.text).toBe(source);
-    const unknown = await callMcpTool(ops, "read-area", { id });
-    expect(unknown.isError).toBe(true);
-    expect(unknown.content[0]?.text).toContain("Unknown tool");
+    const area = await callMcpTool(ops, "read-area", { id });
+    expect(area.isError).toBe(false);
+    expect(area.content[0]?.text).toBe(mdBytes.toString("utf8"));
 
     expect(await readFile(mdPath)).toEqual(mdBytes);
     expect(await readFile(path.join(folder, "weekly.canvas.tsx"))).toEqual(canvasBytes);
@@ -292,7 +295,7 @@ describe("derived canvas markdown", () => {
       "Shipped the store.",
       "Also literal.",
       "Literal beside end.",
-      "`writeSource`",
+      "writeSource",
       "[Notes](https://example.test/notes)",
       "[Phase 3](team-canvas/knowledge-layers/phase-3)",
       "| Name | Status |\n| --- | --- |\n| Alpha | done |",
@@ -313,7 +316,8 @@ describe("derived canvas markdown", () => {
     expect(md).toBe(expected);
     expect(md).toContain("# Weekly");
     expect(md).toContain("Shipped the store.");
-    expect(md).toContain("`writeSource`");
+    expect(md).toContain("writeSource");
+    expect(md).not.toContain("`writeSource`");
     expect(md).toContain("[Notes](https://example.test/notes)");
     expect(md).toContain("| Alpha | done |");
     expect(md).toContain("Ship the file");

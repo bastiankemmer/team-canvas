@@ -90,8 +90,8 @@ describe("collect one fact as Turtle", () => {
     const toolNames = MCP_TOOL_DEFS.map((tool) => tool.name);
     expect(toolNames).toContain("list_canvases");
     expect(toolNames).toContain("check_canvas");
-    expect(toolNames).toHaveLength(22);
-    expect(toolNames).not.toContain("collect");
-    expect(toolNames).not.toContain("read-area");
+    expect(toolNames).toHaveLength(24);
+    expect(toolNames).toContain("collect");
+    expect(toolNames).toContain("read-area");
   });
 });

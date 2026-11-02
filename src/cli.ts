@@ -185,10 +185,15 @@ export async function runCli(
   const cmd = argv[0]
   if (cmd === 'mcp') {
     const { root } = parseMcpArgs(argv)
+    const store = LocalFilesystemCanvasStore(root)
     // stderr only — stdout is the MCP JSON-RPC channel
     console.error(`team-canvas mcp stdio (root ${root})`)
     await startMcpStdioServer({
-      ops: createCanvasEditOps(LocalFilesystemCanvasStore(root)),
+      // The derived file stays in this process. mcp calls areaRead with readDerived.
+      ops: {
+        ...createCanvasEditOps(store),
+        readDerived: (id) => store.readDerived(id),
+      },
     })
     return
   }

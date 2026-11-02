@@ -58,14 +58,18 @@ function attrExpr(el, name) {
   return null;
 }
 
-/** Direct text and string-literal expressions. An identifier is not replaced by its initializer. Anything else is skipped, not run. */
+/**
+ * Direct text, string-literal expressions, and nested Code words.
+ * Code is plain text in the sentence, not a code span. An identifier is not
+ * replaced by its initializer. Anything else is skipped, not run.
+ */
 function literalChildren(el) {
   if (!ts.isJsxElement(el)) return "";
   const parts = [];
   for (const child of el.children) {
     if (ts.isJsxText(child)) {
-      const text = decodeJsxEntities(child.text).trim();
-      if (text) parts.push(text);
+      // The join below collapses whitespace. Doing it again here cannot change the sentence.
+      parts.push(decodeJsxEntities(child.text));
       continue;
     }
     if (
@@ -73,11 +77,17 @@ function literalChildren(el) {
       child.expression &&
       ts.isStringLiteral(child.expression)
     ) {
-      const text = decodeJsxEntities(child.expression.text).trim();
-      if (text) parts.push(text);
+      parts.push(decodeJsxEntities(child.expression.text));
+      continue;
+    }
+    if (
+      (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child)) &&
+      tagName(child) === "Code"
+    ) {
+      parts.push(ts.isJsxElement(child) ? literalChildren(child) : "");
     }
   }
-  return parts.join(" ");
+  return parts.join("").replace(/\s+/g, " ").trim();
 }
 
 function literalStringArray(expr) {
@@ -156,24 +166,21 @@ function todoBlock(value) {
   if (!Array.isArray(value)) return null;
   const lines = [];
   for (const item of value) {
-    if (!item || typeof item !== "object") continue;
+    // null has no fields; reading them throws. A number has none that are strings.
+    if (!item) continue;
     if (typeof item.content === "string") lines.push(item.content);
     if (typeof item.status === "string") lines.push(item.status);
   }
-  return lines.length === 0 ? null : lines.join("\n");
+  return lines.join("\n");
 }
 
 function formBlock(value) {
-  if (typeof value === "string") return value === "" ? null : value;
+  // An empty string is dropped by the caller, same as null.
+  if (typeof value === "string") return value;
   if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  // Number.isFinite is false for NaN, Infinity, and every non-number.
+  if (Number.isFinite(value)) return String(value);
   return null;
-}
-
-function codeSpan(text) {
-  if (!text.includes("`") && !text.includes("\n")) return `\`${text}\``;
-  const fence = text.includes("```") ? "````" : "```";
-  return `${fence}\n${text}\n${fence}`;
 }
 
 const HEADING = { H1: "#", H2: "##", H3: "###" };
@@ -212,10 +219,6 @@ function renderTag(name, el, bindings, state) {
     const text = literalChildren(el);
     return text || null;
   }
-  if (name === "Code") {
-    const text = literalChildren(el);
-    return text ? codeSpan(text) : null;
-  }
   if (name === "Link" || name === "CanvasLink") {
     const target = literalAttr(el, name === "Link" ? "href" : "to");
     const text = literalChildren(el);
@@ -226,10 +229,8 @@ function renderTag(name, el, bindings, state) {
   if (name === "TodoList") {
     return todoBlock(identifierState(attrExpr(el, "todos"), bindings, state));
   }
-  if (Object.hasOwn(VALUE_PROP, name)) {
-    return formBlock(identifierState(attrExpr(el, VALUE_PROP[name]), bindings, state));
-  }
-  return null;
+  // A name that is not a control has no prop, so this is null rather than a paragraph.
+  return formBlock(identifierState(attrExpr(el, VALUE_PROP[name]), bindings, state));
 }
 
 /**
@@ -237,18 +238,22 @@ function renderTag(name, el, bindings, state) {
  * expression whose expression is only a string. Variables and templates are
  * not run, and an identifier is not replaced by its initializer. The canvas
  * is not rendered. Charts and controls are skipped with their text. Layout
- * wrappers are not written. A Callout's literal body is a paragraph; its
+ * wrappers are not written. A Code tag is the words only, inside the
+ * surrounding sentence when it has one. A Callout's literal body is a paragraph; its
  * tone and title are not. Edited todo and form values come from the state
  * sidecar object already loaded by the caller.
  */
 export function projectCanvas(source, state) {
+  // createSourceFile throws on a non-string. That is an empty document, not a crash.
+  if (typeof source !== "string") return "";
   const data =
     state && typeof state === "object" && !Array.isArray(state) ? state : {};
+  // The file name is not read; script kind selects TSX. Parent links are not walked.
   const sf = ts.createSourceFile(
-    "canvas.tsx",
-    typeof source === "string" ? source : "",
+    String(),
+    source,
     ts.ScriptTarget.Latest,
-    false,
+    undefined,
     ts.ScriptKind.TSX,
   );
   const bindings = stateBindings(sf);
@@ -256,11 +261,20 @@ export function projectCanvas(source, state) {
   const visit = (node) => {
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
       const name = tagName(node);
-      if (name && Object.hasOwn(OPAQUE, name)) return;
-      if (name) {
+      // The flag is the skip. A present key whose value is false still has children.
+      if (OPAQUE[name]) return;
+      if (name === "Text" || name === "Callout" || Object.hasOwn(HEADING, name)) {
         const block = renderTag(name, node, bindings, data);
         if (block) blocks.push(block);
+        return;
       }
+      if (name === "Code") {
+        const text = literalChildren(node);
+        if (text) blocks.push(text);
+        return;
+      }
+      const block = renderTag(name, node, bindings, data);
+      if (block) blocks.push(block);
     }
     ts.forEachChild(node, visit);
   };

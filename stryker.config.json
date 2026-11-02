@@ -7,7 +7,8 @@
     "src/app/edit/canvas-edit-ops.ts",
     "src/app/edit/canvas-orientation.ts",
     "packages/mcp/index.ts",
-    "packages/ontology/index.js"
+    "packages/ontology/index.js",
+    "packages/ai/index.js"
   ],
   "timeoutMS": 60000,
   "concurrency": 1,
