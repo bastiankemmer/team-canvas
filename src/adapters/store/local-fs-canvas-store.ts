@@ -3,6 +3,7 @@ import { lstat, open, readdir, readFile, rename, rm, stat, writeFile } from "nod
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CanvasStore } from "../../ports/canvas-store.js";
+import { projectCanvas } from "../../../packages/ai/index.js";
 
 const CANVAS_SUFFIX = ".canvas.tsx";
 const STATE_SUFFIX = ".canvas.data.json";
@@ -158,7 +159,21 @@ export function LocalFilesystemCanvasStore(root: string): CanvasStore {
     async writeSource(id, source) {
       const file = resolve(id, CANVAS_SUFFIX);
       mkdirSync(path.dirname(file), { recursive: true });
+      // Regenerated beside the canvas. A hand edit does not survive the next
+      // source write, and the markdown is never copied back into the canvas.
+      const stateFile = resolve(id, STATE_SUFFIX);
+      // A truncated sidecar must not discard the canvas write. Project with no edits.
+      let state: unknown = {};
+      if (await fileExists(stateFile)) {
+        try {
+          state = JSON.parse(await readFile(stateFile, "utf8")) as unknown;
+        } catch (err) {
+          if (!(err instanceof SyntaxError)) throw err;
+        }
+      }
+      const markdown = projectCanvas(source, state);
       await writeFile(file, source, "utf8");
+      await writeFile(resolve(id, ".md"), markdown, "utf8");
     },
 
     async readState(id) {
@@ -229,6 +244,12 @@ export function LocalFilesystemCanvasStore(root: string): CanvasStore {
           throw err;
         }
       }
+      const fromMd = resolve(fromId, ".md");
+      if (await fileExists(fromMd)) {
+        // POSIX rename replaces a markdown file already at the destination.
+        // That file is not a canvas collision.
+        await rename(fromMd, resolve(toId, ".md"));
+      }
       await pruneEmptyParents(root, fromId);
     },
 
@@ -264,7 +285,8 @@ async function pruneEmptyParents(root: string, fromId: string): Promise<void> {
     if (outsideRoot(path.relative(rootReal, here)) || path.relative(rootReal, here) === "") return;
     const ents = await readdir(dir);
     if (ents.length > 0) return;
-    await rm(dir);
+    // rm without recursive refuses a directory, so an emptied parent would survive the move.
+    await rm(dir, { recursive: true });
     dir = path.dirname(dir);
   }
 }

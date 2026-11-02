@@ -337,6 +337,69 @@ describe("LocalFilesystemCanvasStore", () => {
     );
   });
 
+  it("moves derived markdown with the canvas so the new id answers a read, the old file cannot keep an empty parent, and markdown already at the destination is replaced", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-move-md-"));
+    const store = LocalFilesystemCanvasStore(root);
+    const source = [
+      'import { Text } from "team-canvas/canvas";',
+      "export default function Weekly() {",
+      "  return <Text>Moved with the canvas.</Text>;",
+      "}",
+      "",
+    ].join("\n");
+    await store.writeState("notes/weekly", { n: 1 });
+    await store.writeSource("notes/weekly", source);
+    await mkdir(path.join(root, "archive"), { recursive: true });
+    await writeFile(
+      path.join(root, "archive/weekly.md"),
+      "already at the destination\n",
+      "utf8",
+    );
+
+    await store.moveCanvas!("notes/weekly", "archive/weekly");
+
+    const moved = await readFile(path.join(root, "archive/weekly.md"), "utf8");
+    expect(moved).toContain("Moved with the canvas.");
+    expect(moved).not.toContain("already at the destination");
+    expect(await store.readSource("archive/weekly")).toBe(source);
+    expect(await store.readState("archive/weekly")).toEqual({ n: 1 });
+    await expect(readFile(path.join(root, "notes/weekly.md"), "utf8")).rejects.toThrow(/ENOENT/);
+    await expect(store.readSource("notes/weekly")).rejects.toThrow(/ENOENT/);
+    await expect(stat(path.join(root, "notes"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("writes the canvas and projects with no sidecar edits when the sidecar does not parse, so a truncated state file cannot drop the source save", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-bad-sidecar-"));
+    const store = LocalFilesystemCanvasStore(root);
+    const source = [
+      'import { Stack, Text, TodoList, useCanvasState } from "team-canvas/canvas";',
+      "export default function Weekly() {",
+      '  const [todos] = useCanvasState("todos", [{ id: "0", content: "default todo", status: "pending" }]);',
+      "  return (",
+      "    <Stack>",
+      "      <Text>Saved anyway.</Text>",
+      "      <TodoList todos={todos} />",
+      "    </Stack>",
+      "  );",
+      "}",
+      "",
+    ].join("\n");
+    const sidecar = '{"todos":[{"id":"1","content":"Ship the file","status":"completed"}';
+    const sidecarPath = path.join(root, "notes/weekly.canvas.data.json");
+    await mkdir(path.join(root, "notes"), { recursive: true });
+    await writeFile(sidecarPath, sidecar, "utf8");
+
+    await store.writeSource("notes/weekly", source);
+
+    expect(await store.readSource("notes/weekly")).toBe(source);
+    expect(await readFile(path.join(root, "notes/weekly.canvas.tsx"), "utf8")).toBe(source);
+    const md = await readFile(path.join(root, "notes/weekly.md"), "utf8");
+    expect(md).toBe("Saved anyway.\n");
+    expect(md).not.toContain("Ship the file");
+    expect(md).not.toContain("default todo");
+    expect(await readFile(sidecarPath, "utf8")).toBe(sidecar);
+  });
+
   it(
     "reclaims a crashed lock once it is older than the stale threshold and the next update applies",
     async () => {
