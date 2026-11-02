@@ -61,11 +61,12 @@ function literalTo(el: JsxTag): string | null {
   return null;
 }
 
-function safeTo(to: string): boolean {
+function safeTo(to: string | null): to is string {
   // Starts allowed. An empty catch leaves that, so the invalid id is kept and the caller sees it.
+  // A missing target fails this same check, so the caller does not compare with null first.
   let allowed = true;
   try {
-    assertSafeCanvasId(to);
+    assertSafeCanvasId(to as string);
   } catch {
     allowed = false;
   }
@@ -110,7 +111,7 @@ export function extractCanvasLinks(source: string): CanvasLinkHit[] {
       tagName(node) === "CanvasLink"
     ) {
       const to = literalTo(node);
-      if (to !== null && safeTo(to)) {
+      if (safeTo(to)) {
         const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
         links.push({
           to,

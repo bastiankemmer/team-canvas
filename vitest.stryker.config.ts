@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@team-canvas/mcp": path.join(repoRoot, "packages/mcp/index.ts"),
+      "@team-canvas/ontology": path.join(repoRoot, "packages/ontology/index.js"),
     },
   },
   test: {
@@ -29,6 +30,10 @@ export default defineConfig({
       "test/acceptance/host-ui-bundle.test.ts",
       "test/acceptance/edit-acceptance.test.ts",
       "test/shell-serve-settlement.test.ts",
+      "test/fact-declaration.test.ts",
+      "test/collect-fact-turtle.test.ts",
+      "test/collect-subject-turtle.test.ts",
+      "test/ontology-literals.test.ts",
     ],
     pool: "forks",
     maxWorkers: 1,

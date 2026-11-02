@@ -258,4 +258,33 @@ describe("extractCanvasLinks", () => {
     const source = 'export default function N(){return <CanvasLink to="ok">Go</CanvasLink>}';
     expect(extractCanvasLinks(source)).toEqual([{ to: "ok", line: 1, label: "Go" }]);
   });
+
+  it("omits a CanvasLink when to is null or fails the safe-target check, so a tag that is present is not enough to keep the link", () => {
+    const source = [
+      'const id = "ok";',
+      "export default function Notes() {",
+      "  return (",
+      "    <div>",
+      "      <CanvasLink>NoTo</CanvasLink>",
+      "      <CanvasLink to>Bare</CanvasLink>",
+      "      <CanvasLink to={}>EmptyExpr</CanvasLink>",
+      "      <CanvasLink to={null}>Null</CanvasLink>",
+      "      <CanvasLink to={id}>Dyn</CanvasLink>",
+      '      <CanvasLink to="">Empty</CanvasLink>',
+      '      <CanvasLink to="..">Dots</CanvasLink>',
+      '      <CanvasLink to="/abs">Abs</CanvasLink>',
+      '      <CanvasLink to="a\\b">Back</CanvasLink>',
+      '      <CanvasLink to="a/./b">Dot</CanvasLink>',
+      '      <CanvasLink to={"../x"}>Brace</CanvasLink>',
+      '      <CanvasLink to="ok">Kept</CanvasLink>',
+      "    </div>",
+      "  );",
+      "}",
+      "",
+    ].join("\n");
+
+    expect(extractCanvasLinks(source)).toEqual([
+      { to: "ok", line: lineOf(source, 'to="ok"'), label: "Kept" },
+    ]);
+  });
 });
