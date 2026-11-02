@@ -503,6 +503,19 @@ export function CanvasLink({
   );
 }
 
+export type FactProps = {
+  id: string;
+  subject: string;
+  claim: string;
+  area: string;
+  heading: string;
+};
+
+/** Visible line of a declared fact. The other props stay on the tag; they are not canvas state. */
+export function Fact({ heading }: FactProps): JSX.Element {
+  return <Text>{heading}</Text>;
+}
+
 export type CardSize = "base" | "lg";
 export type CardVariant = "default" | "borderless";
 

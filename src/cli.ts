@@ -4,7 +4,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 // Paths inside this package. A packed install has no @team-canvas/* packages to resolve.
 import { startMcpStdioServer } from '../packages/mcp/dist/index.js'
-// Ontology and ai export nothing yet. The shell still has to import each entry.
+// Side-effect imports: the shell depends on ontology and ai by importing their entries.
 import '../packages/ontology/index.js'
 import '../packages/ai/index.js'
 import {
