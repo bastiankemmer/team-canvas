@@ -167,3 +167,72 @@ export function collectBySubject(sources, subject) {
   if (blocks.length === 0) return "";
   return PREFIX + blocks.join("");
 }
+
+/**
+ * Turtle for every literal fact whose score is at or above the threshold.
+ * Same `score` as one fact. Highest score first; equal scores use fact id in UTF-16 code unit order.
+ * Score 0 stays when the threshold is 0. No qualifying fact is "" so the caller does not get a bare prefix.
+ * ponytail: scans every source. Ceiling: a knowledge folder.
+ * Upgrade: an index if query collect is called on a hot path.
+ */
+export function collectByQuery(sources, query, threshold) {
+  const hits = [];
+  for (const source of sources) {
+    for (const fact of extractFacts(source)) {
+      const value = score(query, fact);
+      if (value >= threshold) hits.push({ fact, value });
+    }
+  }
+  if (hits.length === 0) return "";
+  // `<` on strings is UTF-16 code units, so "Alpha" stays before "alpha".
+  hits.sort((a, b) =>
+    a.value < b.value ? 1 : a.value > b.value ? -1 : a.fact.id < b.fact.id ? -1 : a.fact.id > b.fact.id ? 1 : 0,
+  );
+  return PREFIX + hits.map((hit) => factTriples(hit.fact)).join("");
+}
+
+// A Fact is the same bag as a question: these five fields, nothing else. Order does not matter.
+function vectorText(input) {
+  if (typeof input === "string") return input;
+  return [input.subject, input.heading, input.claim, input.id, input.area].join(" ");
+}
+
+// Hyphen, space, and punctuation are splits. "ux-design" and "UX Design" are the same tokens.
+// A `+` is the same once empty pieces are dropped, and deleting it cannot change the score.
+function tokens(text) {
+  return text.toLowerCase().split(/[^a-z0-9]/).filter(Boolean);
+}
+
+/**
+ * Token counts for a question or a Fact.
+ * Pure math: no model call and no vector file.
+ */
+export function vector(input) {
+  const counts = new Map();
+  for (const token of tokens(vectorText(input))) {
+    counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  // Insertion order. Cosine only sums counts, so sorting tokens cannot change the score.
+  return [...counts];
+}
+
+/**
+ * Cosine of the two bags. An empty question or Fact is 0, never NaN.
+ * Counts are non-negative, so the result stays in [0, 1].
+ */
+export function score(question, fact) {
+  const left = vector(question);
+  const right = vector(fact);
+  if (left.length === 0 || right.length === 0) return 0;
+  const rightCount = new Map(right);
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (const [token, count] of left) {
+    leftNorm += count * count;
+    const other = rightCount.get(token);
+    if (other !== undefined) dot += count * other;
+  }
+  for (const [, count] of right) rightNorm += count * count;
+  return dot / Math.sqrt(leftNorm * rightNorm);
+}

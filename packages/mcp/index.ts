@@ -5,11 +5,12 @@ import type {} from "../ai/index.js";
 
 // Compiled to dist/index.js, one directory deeper than this file, so a relative
 // specifier here would miss ontology and ai. A packed install has no @team-canvas/* name.
-const { collect, collectBySubject } = (await import(
+const { collect, collectBySubject, collectByQuery } = (await import(
   new URL("../../ontology/index.js", import.meta.url).href,
 )) as {
   collect: (sources: readonly string[], factId: string) => string;
   collectBySubject: (sources: readonly string[], subject: string) => string;
+  collectByQuery: (sources: readonly string[], query: string, threshold: number) => string;
 };
 const { areaRead } = (await import(
   new URL("../../ai/index.js", import.meta.url).href,
@@ -437,17 +438,25 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "collect",
     description:
-      "Return Turtle for a fact id, or for every fact with a subject. The result is that Turtle string only.",
+      "Return Turtle for a fact id, every fact with a subject, or every fact at or above a query threshold. The result is that Turtle string only.",
     inputSchema: {
       type: "object",
       properties: {
         fact_id: {
           type: "string",
-          description: "Fact id. Omit when passing subject.",
+          description: "Fact id. Omit when passing subject or query.",
         },
         subject: {
           type: "string",
-          description: "Subject. Omit when passing fact_id.",
+          description: "Subject. Omit when passing fact_id or query.",
+        },
+        query: {
+          type: "string",
+          description: "Question. Requires threshold. Omit when passing fact_id or subject.",
+        },
+        threshold: {
+          type: "number",
+          description: "Minimum score from 0 to 1. Required with query. Omit otherwise.",
         },
       },
     },
@@ -659,11 +668,23 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   collect: async (ops, args) => {
     const factId = optionalString(args, "fact_id");
     const subject = optionalString(args, "subject");
-    // One call is one fact or one subject. Both would mix two Turtle documents.
-    if ((factId === undefined) === (subject === undefined)) {
-      throw new Error("Pass either fact_id or subject");
+    const query = optionalString(args, "query");
+    const threshold = optionalNumber(args, "threshold");
+    const selectors =
+      (factId !== undefined ? 1 : 0) +
+      (subject !== undefined ? 1 : 0) +
+      (query !== undefined ? 1 : 0);
+    // One selector. Threshold belongs to a query, and a query without it is not a search.
+    if (selectors !== 1 || (query !== undefined) !== (threshold !== undefined)) {
+      throw new Error("Pass exactly one of fact_id, subject, or query");
     }
     const sources = await canvasSourceTexts(ops);
+    if (query !== undefined) {
+      if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+        throw new Error("threshold must be a number from 0 to 1");
+      }
+      return collectByQuery(sources, query, threshold);
+    }
     if (factId !== undefined) return collect(sources, factId);
     return collectBySubject(sources, subject as string);
   },
