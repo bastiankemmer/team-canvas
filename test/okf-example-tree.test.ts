@@ -220,10 +220,10 @@ describe("examples/okf", () => {
     }
     if (skill !== undefined) {
       expect(path.relative(repoRoot, SKILL_PATH).startsWith("..")).toBe(true);
-      expect(skill).toContain("The root is `<project-name>/index`");
-      expect(skill).toContain("The worked example id is `team-canvas/index`");
-      expect(skill).toContain('to="team-canvas/index"');
-      expect(skill).not.toMatch(/<CanvasLink to="index">/);
+      expect(skill).toContain("Worked example: `examples/okf/`");
+      expect(skill).toContain("Read `index` there first.");
+      expect(skill).toContain('to="index"');
+      expect(skill).toContain("Canvases are not converted to `.md`.");
     }
     const listed = execFileSync("git", ["ls-files"], {
       cwd: repoRoot,

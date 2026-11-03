@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,24 +26,36 @@ const source = [
   "",
 ].join("\n");
 
+const knowledge = [
+  "# Weekly",
+  "",
+  "Shipped the store.",
+  "",
+  "## Done",
+  "",
+  "Notes stayed.",
+  "",
+  "### Blockers",
+  "",
+  "None.",
+  "",
+].join("\n");
+
 describe("reading an area", () => {
-  it("returns the whole derived file for a canvas id, so every heading is included and the canvas and the markdown stay unchanged", async () => {
+  it("returns the whole knowledge file for an area id, so every heading is included and the canvas and the knowledge file stay unchanged", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-area-read-"));
     const store = LocalFilesystemCanvasStore(root);
     const canvasPath = path.join(root, "notes", "weekly.canvas.tsx");
     const mdPath = path.join(root, "notes", "weekly.md");
 
     await store.writeSource(id, source);
+    await writeFile(mdPath, knowledge, "utf8");
 
     const sourceBytes = await readFile(canvasPath);
     const mdBytes = await readFile(mdPath);
     const full = mdBytes.toString("utf8");
-    expect(full).toContain("Weekly");
-    expect(full).toContain("Done");
-    expect(full).toContain("Blockers");
 
-    // The port loads <id>.md. A heading is not an id, so "Weekly" would miss the file.
-    const result = await areaRead(id, (areaId) => readFile(path.join(root, `${areaId}.md`), "utf8"));
+    const result = await areaRead(id, (areaId) => store.readDerived(areaId));
 
     expect(result).toBe(full);
     expect(result).toContain("Weekly");

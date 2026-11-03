@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,26 +34,41 @@ const source = [
   "",
 ].join("\n");
 
+const knowledge = [
+  "# Weekly",
+  "",
+  "Shipped the store.",
+  "",
+  "## Done",
+  "",
+  "Notes stayed.",
+  "",
+  "### Blockers",
+  "",
+  "None.",
+  "",
+  "area-tail",
+  "",
+].join("\n");
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("MCP read-area", () => {
-  it("returns the whole derived file for a canvas id, so the client gets every heading in that file and the read leaves the canvas and the markdown unchanged", async () => {
+  it("returns the whole knowledge file for an area id, so the client gets every heading in that file and the read leaves the canvas and the knowledge file unchanged", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-read-area-"));
     const store = LocalFilesystemCanvasStore(root);
     await store.writeSource(id, source);
 
     const canvasPath = path.join(root, "notes", "weekly.canvas.tsx");
     const mdPath = path.join(root, "notes", "weekly.md");
+    await writeFile(mdPath, knowledge, "utf8");
+
     const sourceBytes = await readFile(canvasPath);
     const mdBytes = await readFile(mdPath);
     const derived = mdBytes.toString("utf8");
 
     expect(sourceBytes.toString("utf8")).toContain("source-only-marker");
     expect(derived).not.toContain("source-only-marker");
-    expect(derived).toContain("Weekly");
-    expect(derived).toContain("Done");
-    expect(derived).toContain("Blockers");
-    expect(derived.indexOf("area-tail")).toBeGreaterThan(derived.indexOf("Blockers"));
 
     const payload = Buffer.concat([
       encodeMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
