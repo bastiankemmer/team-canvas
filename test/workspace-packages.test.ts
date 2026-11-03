@@ -28,7 +28,7 @@ describe("workspace layer packages", () => {
     expect(meta.status).toBe(0);
     expect(JSON.parse(meta.stdout)).toEqual({
       name: "team-canvas",
-      version: "0.6.1",
+      version: "0.7.0",
     });
 
     for (const name of LAYER_PACKAGES) {
