@@ -39,12 +39,22 @@ describe("MCP collect by query", () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-query-"));
     const store = LocalFilesystemCanvasStore(root);
     await store.writeSource("notes/search", searchSource);
+    await store.writeSource(
+      "other-project/ux",
+      [
+        'import { Fact } from "team-canvas/canvas";',
+        "export default function OtherUx() {",
+        '  return <Fact id="leaked-ux" subject="ux" heading="ux" claim="ux design" area="other-project/ux" />;',
+        "}",
+        "",
+      ].join("\n"),
+    );
     const written = (await readdir(root, { recursive: true })).map((entry) => entry.toString());
     expect(written.some((name) => name.endsWith(".md"))).toBe(false);
     expect(existsSync(path.join(root, "notes", "search.md"))).toBe(false);
 
     const ops = createCanvasEditOps(store, { requireLease: false });
-    const canvasIds = await ops.listCanvases();
+    const canvasIds = await ops.listCanvases({ folder: "notes" });
     const batch = await ops.readSources(canvasIds);
     const sources = canvasIds.map((id) => {
       const entry = batch.sources[id];
@@ -62,15 +72,15 @@ describe("MCP collect by query", () => {
     };
 
     const ux = "ux design";
-    const bestScore = score(ux, fact("best"));
-    const partialScore = score(ux, fact("partial"));
+    const bestScore = score(ux, fact("best"), facts);
+    const partialScore = score(ux, fact("partial"), facts);
     expect(bestScore).toBeLessThan(1);
     expect(bestScore).toBeGreaterThan(partialScore);
     expect(partialScore).toBeGreaterThan(0);
-    for (const id of ["Alpha", "alpha", "none"]) expect(score(ux, fact(id)), id).toBe(0);
+    for (const id of ["Alpha", "alpha", "none"]) expect(score(ux, fact(id), facts), id).toBe(0);
 
-    const mintScore = score("mint", fact("Alpha"));
-    expect(score("mint", fact("alpha"))).toBe(mintScore);
+    const mintScore = score("mint", fact("Alpha"), facts);
+    expect(score("mint", fact("alpha"), facts)).toBe(mintScore);
     expect(mintScore).toBeGreaterThan(0);
     for (const id of ["best", "partial", "none"]) expect(score("mint", fact(id)), id).toBe(0);
 
@@ -89,7 +99,7 @@ describe("MCP collect by query", () => {
     const document = (ids: string[]) => (ids.length === 0 ? "" : PREFIX + ids.map(block).join(""));
 
     const collectText = async (args: Record<string, unknown>) => {
-      const result = await callMcpTool(ops, "collect", args);
+      const result = await callMcpTool(ops, "collect", { project: "notes", ...args });
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
       expect(result.content[0]?.type).toBe("text");
@@ -154,18 +164,20 @@ describe("MCP collect by query", () => {
     expect(await collectText({ fact_id: "missing" })).toBe("");
 
     const rejected: Array<[string, Record<string, unknown>]> = [
-      ["no selector", {}],
-      ["fact id with subject", { fact_id: "best", subject: "mint" }],
-      ["fact id with query", { fact_id: "best", query: ux, threshold: 0 }],
-      ["subject with query", { subject: "mint", query: ux, threshold: 0 }],
-      ["all three selectors", { fact_id: "best", subject: "mint", query: ux, threshold: 0 }],
-      ["query without threshold", { query: ux }],
-      ["fact id with threshold", { fact_id: "best", threshold: 0 }],
-      ["subject with threshold", { subject: "mint", threshold: 0 }],
-      ["threshold alone", { threshold: 0 }],
-      ["threshold below 0", { query: ux, threshold: -0.01 }],
-      ["threshold above 1", { query: ux, threshold: 1.01 }],
-      ["threshold that is not a number", { query: ux, threshold: "0.5" }],
+      ["missing project", { fact_id: "best" }],
+      ["empty project", { project: "", fact_id: "best" }],
+      ["no selector", { project: "notes" }],
+      ["fact id with subject", { project: "notes", fact_id: "best", subject: "mint" }],
+      ["fact id with query", { project: "notes", fact_id: "best", query: ux, threshold: 0 }],
+      ["subject with query", { project: "notes", subject: "mint", query: ux, threshold: 0 }],
+      ["all three selectors", { project: "notes", fact_id: "best", subject: "mint", query: ux, threshold: 0 }],
+      ["query without threshold", { project: "notes", query: ux }],
+      ["fact id with threshold", { project: "notes", fact_id: "best", threshold: 0 }],
+      ["subject with threshold", { project: "notes", subject: "mint", threshold: 0 }],
+      ["threshold alone", { project: "notes", threshold: 0 }],
+      ["threshold below 0", { project: "notes", query: ux, threshold: -0.01 }],
+      ["threshold above 1", { project: "notes", query: ux, threshold: 1.01 }],
+      ["threshold that is not a number", { project: "notes", query: ux, threshold: "0.5" }],
     ];
     for (const [label, args] of rejected) {
       const result = await callMcpTool(ops, "collect", args);

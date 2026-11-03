@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import * as ai from "../packages/ai/index.js";
 import * as human from "../packages/human/index.ts";
-import { score, vector, type Fact } from "../packages/ontology/index.js";
+import { collectByQuery, extractFacts, score, vector, type Fact } from "../packages/ontology/index.js";
 import { LocalFilesystemCanvasStore } from "../src/adapters/store/local-fs-canvas-store.js";
 
 const cube: Fact = {
@@ -116,5 +116,37 @@ describe("fact vector score", () => {
       expect(value).toBeLessThanOrEqual(1);
       expect(Number.isNaN(value)).toBe(false);
     }
+  });
+
+  it("ranks a rare word above a word that is in every fact, so a long question still finds the distinctive claim", () => {
+    const canvas = (id: string, claim: string) =>
+      [
+        'import { Fact } from "team-canvas/canvas";',
+        "export default function Note() {",
+        `  return <Fact id="${id}" subject="note" heading="note" claim="${claim}" area="proj/note" />;`,
+        "}",
+        "",
+      ].join("\n");
+    const sources = [
+      canvas("rare", "lease canvas"),
+      canvas("common", "canvas canvas canvas canvas"),
+      canvas("also", "canvas"),
+      canvas("more", "canvas"),
+      canvas("rest", "canvas"),
+    ];
+    const query = "lease canvas canvas canvas";
+    const facts = sources.flatMap((source) => extractFacts(source));
+    const byId = (id: string) => {
+      const found = facts.find((fact) => fact.id === id);
+      if (!found) throw new Error(id);
+      return found;
+    };
+    expect(score(query, byId("common"))).toBeGreaterThan(score(query, byId("rare")));
+    const turtle = collectByQuery(sources, query, 0);
+    const rareAt = turtle.indexOf("urn:team-canvas:fact:rare");
+    const commonAt = turtle.indexOf("urn:team-canvas:fact:common");
+    expect(rareAt).toBeGreaterThanOrEqual(0);
+    expect(rareAt).toBeLessThan(commonAt);
+    expect(score(query, byId("rare"), facts)).toBeGreaterThan(score(query, byId("common"), facts));
   });
 });

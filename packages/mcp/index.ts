@@ -438,10 +438,14 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "collect",
     description:
-      "Return Turtle for a fact id, every fact with a subject, or every fact at or above a query threshold. The result is that Turtle string only.",
+      "Return Turtle for a fact id, every fact with a subject, or every fact at or above a query threshold inside one project. A query ranks rare words in that project above words in every fact. The result is that Turtle string only.",
     inputSchema: {
       type: "object",
       properties: {
+        project: {
+          type: "string",
+          description: "Project folder to scope fact collection to (for example team-canvas).",
+        },
         fact_id: {
           type: "string",
           description: "Fact id. Omit when passing subject or query.",
@@ -459,6 +463,7 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
           description: "Minimum score from 0 to 1. Required with query. Omit otherwise.",
         },
       },
+      required: ["project"],
     },
   },
   {
@@ -559,9 +564,10 @@ type ToolHandler = (
 
 type SourceEntry = { source: string } | { error: string };
 
-// Canvas texts only. The derived file is not a fact source, and this package does not open the store.
-async function canvasSourceTexts(ops: McpCanvasOps): Promise<string[]> {
-  const ids = (await ops.listCanvases()) as string[];
+// Canvas texts in one project only. Never scrape other projects in the store.
+async function canvasSourceTexts(ops: McpCanvasOps, project: string): Promise<string[]> {
+  if (!project) throw new Error("project must be a non-empty string");
+  const ids = (await ops.listCanvases({ folder: project })) as string[];
   const { sources } = (await ops.readSources(ids)) as { sources: Record<string, SourceEntry> };
   return ids.map((id) => {
     const entry = sources[id];
@@ -666,6 +672,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       limit: typeof args.limit === "number" ? args.limit : undefined,
     }),
   collect: async (ops, args) => {
+    const project = requireString(args, "project");
     const factId = optionalString(args, "fact_id");
     const subject = optionalString(args, "subject");
     const query = optionalString(args, "query");
@@ -678,7 +685,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     if (selectors !== 1 || (query !== undefined) !== (threshold !== undefined)) {
       throw new Error("Pass exactly one of fact_id, subject, or query");
     }
-    const sources = await canvasSourceTexts(ops);
+    const sources = await canvasSourceTexts(ops, project);
     if (query !== undefined) {
       if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
         throw new Error("threshold must be a number from 0 to 1");

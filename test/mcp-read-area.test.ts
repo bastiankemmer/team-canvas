@@ -82,7 +82,7 @@ describe("MCP read-area", () => {
         jsonrpc: "2.0",
         id: 3,
         method: "tools/call",
-        params: { name: "collect", arguments: { fact_id: "layer-fact" } },
+        params: { name: "collect", arguments: { project: "notes", fact_id: "layer-fact" } },
       }),
     ]).toString("utf8");
     const shell = spawnSync(

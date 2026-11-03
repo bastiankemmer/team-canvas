@@ -511,9 +511,9 @@ export type FactProps = {
   heading: string;
 };
 
-/** Visible line of a declared fact. The other props stay on the tag; they are not canvas state. */
-export function Fact({ heading }: FactProps): JSX.Element {
-  return <Text>{heading}</Text>;
+/** Machine claim for collect. The <Text> beside this tag is the human line. */
+export function Fact(_props: FactProps): null {
+  return null;
 }
 
 export type CardSize = "base" | "lg";

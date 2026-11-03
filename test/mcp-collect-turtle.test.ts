@@ -42,12 +42,22 @@ describe("MCP collect", () => {
     const store = LocalFilesystemCanvasStore(root);
     await store.writeSource("notes/alpha", alphaSource);
     await store.writeSource("notes/beta", betaSource);
+    await store.writeSource(
+      "other-project/leak",
+      [
+        'import { Fact } from "team-canvas/canvas";',
+        "export default function Leak() {",
+        '  return <Fact id="other-project-fact" subject="knowledge-layers" claim="Must not leak across projects." area="other-project/leak" heading="Leak" />;',
+        "}",
+        "",
+      ].join("\n"),
+    );
     const derived = path.join(root, "notes", "alpha.md");
     await appendFile(derived, "derived-only-sentence\n", "utf8");
     expect(await readFile(derived, "utf8")).toContain("derived-only-sentence");
 
     const ops = createCanvasEditOps(store, { requireLease: false });
-    const ids = await ops.listCanvases();
+    const ids = await ops.listCanvases({ folder: "notes" });
     const batch = await ops.readSources(ids);
     const sources = ids.map((id) => {
       const entry = batch.sources[id];
@@ -59,8 +69,11 @@ describe("MCP collect", () => {
 
     const factTurtle = collect(sources, "layer-fact");
     const subjectTurtle = collectBySubject(sources, "knowledge-layers");
-    const byFact = await callMcpTool(ops, "collect", { fact_id: "layer-fact" });
-    const bySubject = await callMcpTool(ops, "collect", { subject: "knowledge-layers" });
+    const byFact = await callMcpTool(ops, "collect", { project: "notes", fact_id: "layer-fact" });
+    const bySubject = await callMcpTool(ops, "collect", { project: "notes", subject: "knowledge-layers" });
+    const crossProjectId = await callMcpTool(ops, "collect", { project: "notes", fact_id: "other-project-fact" });
+    expect(crossProjectId.isError).toBe(false);
+    expect(crossProjectId.content).toEqual([{ type: "text", text: "" }]);
 
     expect(byFact.isError).toBe(false);
     expect(byFact.content).toEqual([{ type: "text", text: factTurtle }]);
@@ -72,6 +85,7 @@ describe("MCP collect", () => {
     expect(bySubject.content[0]?.text).toContain("Facts render as Turtle.");
     expect(bySubject.content[0]?.text).toContain("An area id is a canvas id.");
     expect(bySubject.content[0]?.text).not.toContain("Not this subject.");
+    expect(bySubject.content[0]?.text).not.toContain("Must not leak across projects.");
 
     for (const result of [byFact, bySubject]) {
       const text = result.content.map((item) => item.text).join("");

@@ -169,19 +169,24 @@ export function collectBySubject(sources, subject) {
 }
 
 /**
- * Turtle for every literal fact whose score is at or above the threshold.
- * Same `score` as one fact. Highest score first; equal scores use fact id in UTF-16 code unit order.
+ * Turtle for every literal fact whose project-weighted score is at or above the threshold.
+ * Highest score first; equal scores use fact id in UTF-16 code unit order.
  * Score 0 stays when the threshold is 0. No qualifying fact is "" so the caller does not get a bare prefix.
- * ponytail: scans every source. Ceiling: a knowledge folder.
- * Upgrade: an index if query collect is called on a hot path.
+ * Weights are inverse document frequency over these sources only (one project).
+ * ponytail: scans every source twice (facts, then token frequency). Ceiling: one project folder.
+ * Upgrade: a saved frequency table if one project is too big to scan per query.
  */
 export function collectByQuery(sources, query, threshold) {
-  const hits = [];
+  const facts = [];
   for (const source of sources) {
-    for (const fact of extractFacts(source)) {
-      const value = score(query, fact);
-      if (value >= threshold) hits.push({ fact, value });
-    }
+    for (const fact of extractFacts(source)) facts.push(fact);
+  }
+  const idf = documentFrequency(facts);
+  const question = applyIdf(counts(query), idf);
+  const hits = [];
+  for (const fact of facts) {
+    const value = cosine(question, applyIdf(counts(fact), idf));
+    if (value >= threshold) hits.push({ fact, value });
   }
   if (hits.length === 0) return "";
   // `<` on strings is UTF-16 code units, so "Alpha" stays before "alpha".
@@ -203,36 +208,70 @@ function tokens(text) {
   return text.toLowerCase().split(/[^a-z0-9]/).filter(Boolean);
 }
 
+function counts(input) {
+  const bag = new Map();
+  for (const token of tokens(vectorText(input))) {
+    bag.set(token, (bag.get(token) ?? 0) + 1);
+  }
+  return bag;
+}
+
 /**
  * Token counts for a question or a Fact.
  * Pure math: no model call and no vector file.
  */
 export function vector(input) {
-  const counts = new Map();
-  for (const token of tokens(vectorText(input))) {
-    counts.set(token, (counts.get(token) ?? 0) + 1);
-  }
   // Insertion order. Cosine only sums counts, so sorting tokens cannot change the score.
-  return [...counts];
+  return [...counts(input)];
+}
+
+// How many facts in this project contain the token, then ln(N/df).
+// A token in every fact weighs 0, so it cannot outrank a rare word.
+// One fact makes every token "in every fact"; keep raw counts there or the only fact always scores 0.
+function documentFrequency(facts) {
+  const df = new Map();
+  for (const fact of facts) {
+    for (const token of counts(fact).keys()) df.set(token, (df.get(token) ?? 0) + 1);
+  }
+  const n = facts.length;
+  const idf = new Map();
+  for (const [token, seen] of df) idf.set(token, n < 2 ? 1 : Math.log(n / seen));
+  return idf;
+}
+
+// A question token that no fact contains is dropped so it cannot inflate the question's length.
+function applyIdf(bag, idf) {
+  const weighted = new Map();
+  for (const [token, count] of bag) {
+    const weight = idf.get(token);
+    if (weight === undefined) continue;
+    weighted.set(token, count * weight);
+  }
+  return weighted;
+}
+
+function cosine(left, right) {
+  if (left.size === 0 || right.size === 0) return 0;
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (const [token, weight] of left) {
+    leftNorm += weight * weight;
+    const other = right.get(token);
+    if (other !== undefined) dot += weight * other;
+  }
+  for (const weight of right.values()) rightNorm += weight * weight;
+  if (leftNorm === 0 || rightNorm === 0) return 0;
+  return dot / Math.sqrt(leftNorm * rightNorm);
 }
 
 /**
  * Cosine of the two bags. An empty question or Fact is 0, never NaN.
  * Counts are non-negative, so the result stays in [0, 1].
+ * Pass the project's facts to weight tokens by inverse document frequency. Omit them for raw counts.
  */
-export function score(question, fact) {
-  const left = vector(question);
-  const right = vector(fact);
-  if (left.length === 0 || right.length === 0) return 0;
-  const rightCount = new Map(right);
-  let dot = 0;
-  let leftNorm = 0;
-  let rightNorm = 0;
-  for (const [token, count] of left) {
-    leftNorm += count * count;
-    const other = rightCount.get(token);
-    if (other !== undefined) dot += count * other;
-  }
-  for (const [, count] of right) rightNorm += count * count;
-  return dot / Math.sqrt(leftNorm * rightNorm);
+export function score(question, fact, facts) {
+  if (facts === undefined) return cosine(counts(question), counts(fact));
+  const idf = documentFrequency(facts);
+  return cosine(applyIdf(counts(question), idf), applyIdf(counts(fact), idf));
 }
