@@ -25,13 +25,13 @@ function pkgRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 }
 
-/** Absolute path to team-canvas SDK barrel (aliased as "team-canvas/canvas"). */
+/** Human package SDK barrel, aliased as "team-canvas/canvas" when a canvas is bundled. */
 export function defaultSdkPath(): string {
-  return path.join(pkgRoot(), 'src/sdk/index.ts')
+  return path.join(pkgRoot(), 'packages/human/index.ts')
 }
 
 function hooksPath(): string {
-  return path.join(pkgRoot(), 'src/sdk/hooks.ts')
+  return path.join(pkgRoot(), 'packages/human/hooks.ts')
 }
 
 function stateBridgePath(): string {

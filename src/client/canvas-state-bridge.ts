@@ -1,4 +1,4 @@
-import type { CanvasStateStore } from "../sdk/hooks.js";
+import type { CanvasStateStore } from "@team-canvas/human";
 
 export type TeamCanvasBoot = {
   canvasId: string;

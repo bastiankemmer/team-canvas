@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { assertSafeCanvasId } from "../../adapters/store/local-fs-canvas-store.js";
 import { extractCanvasLinks } from "./canvas-links.js";
 
 function lineOf(source: string, needle: string): number {
@@ -226,6 +227,63 @@ describe("extractCanvasLinks", () => {
     expect(extractCanvasLinks(source)).toEqual([
       { to: "a/b", line: lineOf(source, "a&#47;b"), label: "Slash" },
       { to: "a/b", line: lineOf(source, 'to="a/b"'), label: "SlashRaw" },
+      { to: "ok", line: lineOf(source, 'to="ok"'), label: "Kept" },
+    ]);
+    // The id check's error is why those targets are absent. An empty catch would leave
+    // them allowed, so they would show up beside the safe links.
+    expect(() => assertSafeCanvasId("../x")).toThrow('Invalid canvas id "../x"');
+    expect(() => assertSafeCanvasId("..")).toThrow('Invalid canvas id ".."');
+  });
+
+  it("keeps a non-scalar numeric character reference raw and decodes zero and the scalar edges", () => {
+    const source = [
+      "export default function Notes() {",
+      "  return (",
+      '    <CanvasLink to="ok">&#0;&#x0;&#xD7FF;&#xD800;&#xDFFF;&#xE000;&#x10FFFF;&#x110000;&#-1;&#1.5;</CanvasLink>',
+      "  );",
+      "}",
+      "",
+    ].join("\n");
+
+    expect(extractCanvasLinks(source)).toEqual([
+      {
+        to: "ok",
+        line: lineOf(source, "CanvasLink"),
+        label: `\0\0${String.fromCodePoint(0xd7ff)}&#xD800;&#xDFFF;${String.fromCodePoint(0xe000)}${String.fromCodePoint(0x10ffff)}&#x110000;&#-1;&#1.5;`,
+      },
+    ]);
+  });
+
+  it("parses the canvas as TSX, so a CanvasLink element is a link", () => {
+    const source = 'export default function N(){return <CanvasLink to="ok">Go</CanvasLink>}';
+    expect(extractCanvasLinks(source)).toEqual([{ to: "ok", line: 1, label: "Go" }]);
+  });
+
+  it("omits a CanvasLink when to is null or fails the safe-target check, so a tag that is present is not enough to keep the link", () => {
+    const source = [
+      'const id = "ok";',
+      "export default function Notes() {",
+      "  return (",
+      "    <div>",
+      "      <CanvasLink>NoTo</CanvasLink>",
+      "      <CanvasLink to>Bare</CanvasLink>",
+      "      <CanvasLink to={}>EmptyExpr</CanvasLink>",
+      "      <CanvasLink to={null}>Null</CanvasLink>",
+      "      <CanvasLink to={id}>Dyn</CanvasLink>",
+      '      <CanvasLink to="">Empty</CanvasLink>',
+      '      <CanvasLink to="..">Dots</CanvasLink>',
+      '      <CanvasLink to="/abs">Abs</CanvasLink>',
+      '      <CanvasLink to="a\\b">Back</CanvasLink>',
+      '      <CanvasLink to="a/./b">Dot</CanvasLink>',
+      '      <CanvasLink to={"../x"}>Brace</CanvasLink>',
+      '      <CanvasLink to="ok">Kept</CanvasLink>',
+      "    </div>",
+      "  );",
+      "}",
+      "",
+    ].join("\n");
+
+    expect(extractCanvasLinks(source)).toEqual([
       { to: "ok", line: lineOf(source, 'to="ok"'), label: "Kept" },
     ]);
   });

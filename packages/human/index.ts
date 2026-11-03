@@ -22,6 +22,7 @@ export {
 export type {
   CanvasAction,
   CanvasHostTheme,
+  CanvasStateStore,
   SetCanvasState,
 } from "./hooks.js";
 export {
@@ -87,6 +88,7 @@ export type {
   CalloutProps,
   CalloutTone,
   CanvasLinkProps,
+  FactProps,
   CardBodyProps,
   CardHeaderProps,
   CardProps,
@@ -116,6 +118,7 @@ export {
   Button,
   Callout,
   CanvasLink,
+  Fact,
   Card,
   CardBody,
   CardHeader,

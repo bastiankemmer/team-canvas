@@ -6,10 +6,11 @@
     "src/app/edit/canvas-links.ts",
     "src/app/edit/canvas-edit-ops.ts",
     "src/app/edit/canvas-orientation.ts",
-    "src/adapters/mcp/mcp-server.ts"
+    "packages/mcp/index.ts",
+    "packages/ontology/index.js"
   ],
   "timeoutMS": 60000,
-  "concurrency": 4,
+  "concurrency": 1,
   "vitest": {
     "configFile": "vitest.stryker.config.ts",
     "related": false

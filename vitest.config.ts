@@ -6,7 +6,11 @@ export default defineConfig(
     {
       test: {
         environment: "node",
-        include: ["src/**/*.test.{ts,tsx}", "test/**/*.test.{ts,tsx}"],
+        include: [
+          "src/**/*.test.{ts,tsx}",
+          "test/**/*.test.{ts,tsx}",
+          "packages/human/**/*.test.{ts,tsx}",
+        ],
         pool: "forks",
         maxWorkers: 1,
         coverage: {
@@ -16,6 +20,7 @@ export default defineConfig(
             ".stryker-tmp/**",
             "coverage/**",
             "src/**/*.test.{ts,tsx}",
+            "packages/human/**/*.test.{ts,tsx}",
             "test/**",
             "examples/**",
           ],

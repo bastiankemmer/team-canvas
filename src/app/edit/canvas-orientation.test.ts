@@ -741,4 +741,101 @@ return (
     expect(nlAdd.source).toMatch(/\n<Card>__tc_slot_/);
     expect(nlAdd.source).not.toMatch(/\n <Card>/);
   });
+
+  it("keeps a deeper short run when a later run is longer but shallower, so length alone does not replace it", () => {
+    const source = `export default function D() {
+  return (
+    <Root>
+      <Left>
+        <Mid>
+          <Card>a</Card>
+          <Card>b</Card>
+        </Mid>
+      </Left>
+      <Right>
+        <Text>1</Text>
+        <Text>2</Text>
+        <Text>3</Text>
+      </Right>
+    </Root>
+  );
+}
+`;
+    expect(inspectSourceOrientation(source)).toEqual({
+      kind: "Card",
+      addAvailable: true,
+      slots: [],
+    });
+  });
+
+  it("parses the canvas as TSX, so the oriented pattern is the repeated component", () => {
+    expect(
+      inspectSourceOrientation(
+        "export default function N(){return <Stack><Card>a</Card><Card>b</Card></Stack>}",
+      ),
+    ).toEqual({ kind: "Card", addAvailable: true, slots: [] });
+    expect(
+      pendingSlots(
+        "export default function N(){return <CardHeader>__tc_slot_aaa__</CardHeader>}",
+      ),
+    ).toEqual([{ id: "aaa", label: "Card header" }]);
+  });
+
+  it("splits PascalCase and acronym labels on the lower-to-upper and acronym boundaries", () => {
+    expect(
+      pendingSlots("export default function N(){return <ABCParser>__tc_slot_a1__</ABCParser>}"),
+    ).toEqual([{ id: "a1", label: "Abc parser" }]);
+    expect(
+      pendingSlots("export default function N(){return <Row2Cell>__tc_slot_c1__</Row2Cell>}"),
+    ).toEqual([{ id: "c1", label: "Row2 cell" }]);
+    expect(
+      pendingSlots("export default function N(){return <XMLHttpRequest>__tc_slot_x1__</XMLHttpRequest>}"),
+    ).toEqual([{ id: "x1", label: "Xml http request" }]);
+  });
+
+  it("blanks the trimmed text and not the padding, and does not blank a self-closing attribute", () => {
+    const padded = "export default function P(){return (<Stack><Card>  hi  </Card><Card>  lo  </Card></Stack>);}";
+    const padAdd = addOrientedSibling(padded);
+    expect(padAdd.slots).toHaveLength(1);
+    const token = `__tc_slot_${padAdd.slots[0]!.id}__`;
+    const card = padAdd.source.lastIndexOf("<Card>");
+    const at = padAdd.source.lastIndexOf(token);
+    expect(padAdd.source.slice(card, at)).toBe("<Card>  ");
+    expect(padAdd.source.slice(at + token.length, at + token.length + 2)).toBe("  ");
+
+    const icons = `export default function F() {
+  return (
+    <Stack>
+      <Icon name={"keep"} />
+      <Icon name={"keep"} />
+    </Stack>
+  );
+}
+`;
+    const iconAdd = addOrientedSibling(icons);
+    const clone = iconAdd.source.slice(iconAdd.source.lastIndexOf("<Icon"));
+    expect(iconAdd.slots).toEqual([]);
+    expect(clone).toContain('name={"keep"}');
+    expect(iconAdd.source.match(/<Icon /g)).toHaveLength(3);
+  });
+
+  it("inserts the clone at the template indent, starting after the previous newline and stopping before the tag", () => {
+    const source = `export default function S() {
+  return (
+    <Stack>
+      <Card>one</Card>
+      <Card>two</Card>
+    </Stack>
+  );
+}
+`;
+    const added = addOrientedSibling(source);
+    const templateLine = source.slice(source.lastIndexOf("\n", source.lastIndexOf("<Card>") - 1) + 1);
+    const indent = templateLine.slice(0, templateLine.indexOf("<"));
+    expect(indent).toBe("      ");
+    expect(indent.includes("<")).toBe(false);
+    const cloneAt = added.source.lastIndexOf("<Card>");
+    expect(added.source.slice(cloneAt - indent.length - 1, cloneAt)).toBe(`\n${indent}`);
+    expect(added.source.slice(cloneAt, cloneAt + 5)).toBe("<Card");
+  });
 });

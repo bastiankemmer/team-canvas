@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { callMcpTool } from "@team-canvas/mcp";
 import { createCanvasEditOps } from "../../src/app/edit/canvas-edit-ops.js";
-import { callMcpTool } from "../../src/adapters/mcp/mcp-server.js";
 import {
   startHttpServer,
   type RunningServer,

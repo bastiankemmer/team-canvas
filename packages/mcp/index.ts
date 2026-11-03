@@ -1,11 +1,101 @@
 import type { Readable, Writable } from "node:stream";
-import {
-  createCanvasEditOps,
-  type CanvasEditOps,
-  type ReplaceEdit,
-} from "../../app/edit/canvas-edit-ops.js";
-import type { TopicStatus, WriteMeta } from "../../app/settle/settlement.js";
-import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
+// Keeps the layer edge on this source file. Erased from dist; see the load below.
+import type {} from "../ontology/index.js";
+
+// Compiled to dist/index.js, one directory deeper than this file, so a relative
+// specifier here would miss ontology. A packed install has no @team-canvas/* name.
+const { collect, collectBySubject, collectByQuery, extractFacts, readFacts } = (await import(
+  new URL("../../ontology/index.js", import.meta.url).href,
+)) as {
+  extractFacts: (source: string) => unknown[];
+  collect: (sources: readonly string[], factId: string) => string;
+  collectBySubject: (sources: readonly string[], subject: string) => string;
+  collectByQuery: (sources: readonly string[], query: string, threshold: number) => string;
+  readFacts: (source: string) => string;
+};
+
+/** Who/why/topic on a write. Same shape the shell's change log accepts. */
+type WriteMeta = { actor?: string; reason?: string; topic?: string };
+
+type ReplaceEdit = {
+  old_string: string;
+  new_string: string;
+  replace_all?: boolean;
+};
+
+type TopicStatus = "open" | "escalated" | "settled";
+
+/**
+ * Edit operations and settlement the handlers call.
+ * Structural so this package does not import the shell; the shell passes the real object.
+ */
+type McpCanvasOps = {
+  settlement: {
+    acquireLease(input: {
+      actor: unknown;
+      canvas: unknown;
+      ttlSeconds?: unknown;
+    }): Promise<unknown>;
+    releaseLease(input: { actor: unknown; canvas: unknown }): Promise<unknown>;
+    listLeases(): Promise<unknown>;
+    declareIntent(input: {
+      actor: unknown;
+      topic: unknown;
+      plan: unknown;
+      reason?: unknown;
+      canvas?: unknown;
+      ttlSeconds?: unknown;
+    }): Promise<unknown>;
+    listTopics(status?: TopicStatus): Promise<unknown>;
+    escalate(actor: unknown, topic: unknown): Promise<unknown>;
+    listChanges(filter?: {
+      canvas?: string;
+      topic?: string;
+      actor?: string;
+      limit?: number;
+    }): Promise<unknown>;
+    takeNotices(actor: string): Promise<unknown[]>;
+  };
+  listCanvases(opts?: {
+    folder?: string;
+    type?: "canvas" | "folder";
+    depth?: number;
+  }): Promise<unknown>;
+  createCanvas(id: string, source?: string, meta?: WriteMeta): Promise<unknown>;
+  readSource(id: string): Promise<unknown>;
+  readSources(ids: string[]): Promise<unknown>;
+  writeSource(id: string, source: string, meta?: WriteMeta): Promise<void>;
+  replaceInSource(
+    id: string,
+    oldText: string,
+    newText: string,
+    replaceAll?: boolean,
+    meta?: WriteMeta,
+  ): Promise<unknown>;
+  replaceInSource(
+    id: string,
+    edits: readonly ReplaceEdit[],
+    meta?: WriteMeta,
+  ): Promise<unknown>;
+  checkCanvas(id: string): Promise<unknown>;
+  searchSource(id: string, query: string): Promise<unknown>;
+  listLinks(id: string): Promise<unknown>;
+  backlinks(id: string): Promise<unknown>;
+  searchLinked(id: string, query: string): Promise<unknown>;
+  inspectOrientation(id: string): Promise<unknown>;
+  addOriented(id: string, meta?: WriteMeta): Promise<unknown>;
+  fillSlots(
+    id: string,
+    slots: Record<string, string>,
+    meta?: WriteMeta,
+  ): Promise<unknown>;
+  move(
+    from: string,
+    to: string,
+    opts?: { folder?: boolean; match?: string },
+    meta?: WriteMeta,
+  ): Promise<unknown>;
+};
 
 const TOPIC_STATUSES: TopicStatus[] = ["open", "escalated", "settled"];
 
@@ -90,6 +180,16 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
     },
   },
   {
+    name: "read_facts",
+    description:
+      "Return Turtle for the literal facts on one canvas. The component text stays out, and other canvases are not searched. Use search_source to search that component. Use collect for a subject or a query across one project.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+  },
+  {
     name: "read_sources",
     description:
       "Read full .canvas.tsx source for several ids in one call. Returns { sources } keyed by id, each { source } or { error }, so one missing canvas does not drop the rest",
@@ -146,7 +246,7 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "check_canvas",
     description:
-      "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export",
+      "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export. A canvas with no literal Fact also gets a warning, because collect and read_facts cannot see it. An id ending in index, roadmap, brief, research, or phase-N is exempt",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" } },
@@ -336,6 +436,37 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
       },
     },
   },
+  {
+    name: "collect",
+    description:
+      "Return Turtle for a fact id, every fact with a subject, or every fact at or above a query threshold inside one project. A query ranks rare words in that project above words in every fact. The result is that Turtle string only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: {
+          type: "string",
+          description: "Project folder to scope fact collection to (for example team-canvas).",
+        },
+        fact_id: {
+          type: "string",
+          description: "Fact id. Omit when passing subject or query.",
+        },
+        subject: {
+          type: "string",
+          description: "Subject. Omit when passing fact_id or query.",
+        },
+        query: {
+          type: "string",
+          description: "Question. Requires threshold. Omit when passing fact_id or subject.",
+        },
+        threshold: {
+          type: "number",
+          description: "Minimum score from 0 to 1. Required with query. Omit otherwise.",
+        },
+      },
+      required: ["project"],
+    },
+  },
 ];
 
 export type McpToolResult = {
@@ -416,9 +547,29 @@ function requireSlotRecord(args: Record<string, unknown>): Record<string, string
 }
 
 type ToolHandler = (
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   args: Record<string, unknown>,
 ) => Promise<unknown>;
+
+type SourceEntry = { source: string } | { error: string };
+
+// Link lists and epic status canvases. Their lasting claims live on a knowledge or reference canvas.
+const NO_FACT_EXEMPT = /^(index|roadmap|brief|research|phase-\d+)$/;
+
+const NO_FACT_WARNING =
+  "No literal <Fact> on this canvas, so collect and read_facts return nothing for it. Add one Fact per rule an agent should follow, or leave it if the page is only for people.";
+
+// Canvas texts in one project only. Never scrape other projects in the store.
+async function canvasSourceTexts(ops: McpCanvasOps, project: string): Promise<string[]> {
+  if (!project) throw new Error("project must be a non-empty string");
+  const ids = (await ops.listCanvases({ folder: project })) as string[];
+  const { sources } = (await ops.readSources(ids)) as { sources: Record<string, SourceEntry> };
+  return ids.map((id) => {
+    const entry = sources[id];
+    if (entry && "source" in entry) return entry.source;
+    throw new Error(entry && "error" in entry ? entry.error : `Missing canvas source: ${id}`);
+  });
+}
 
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_canvases: (ops, args) =>
@@ -434,6 +585,11 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       metaFrom(args),
     ),
   read_source: (ops, args) => ops.readSource(requireString(args, "id")),
+  read_facts: async (ops, args) => {
+    const source = await ops.readSource(requireString(args, "id"));
+    if (typeof source !== "string") throw new Error("Canvas source is not text");
+    return readFacts(source);
+  },
   read_sources: (ops, args) => ops.readSources(requireStringList(args, "ids")),
   write_source: async (ops, args) => {
     const id = requireString(args, "id");
@@ -458,7 +614,16 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       meta,
     );
   },
-  check_canvas: (ops, args) => ops.checkCanvas(requireString(args, "id")),
+  check_canvas: async (ops, args) => {
+    const id = requireString(args, "id");
+    const result = await ops.checkCanvas(id);
+    // ponytail: exemption by last id segment. A page that is only for people still warns.
+    // Upgrade: an explicit opt-out on the canvas if those pages make the warning noise.
+    if (NO_FACT_EXEMPT.test(id.slice(id.lastIndexOf("/") + 1))) return result;
+    const source = await ops.readSource(id);
+    if (typeof source !== "string" || extractFacts(source).length > 0) return result;
+    return { ...(result as object), warning: NO_FACT_WARNING };
+  },
   search_source: (ops, args) =>
     ops.searchSource(requireString(args, "id"), requireString(args, "query")),
   list_links: (ops, args) => ops.listLinks(requireString(args, "id")),
@@ -515,11 +680,35 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       actor: optionalString(args, "actor"),
       limit: typeof args.limit === "number" ? args.limit : undefined,
     }),
+  collect: async (ops, args) => {
+    const project = requireString(args, "project");
+    const factId = optionalString(args, "fact_id");
+    const subject = optionalString(args, "subject");
+    const query = optionalString(args, "query");
+    const threshold = optionalNumber(args, "threshold");
+    const selectors =
+      (factId !== undefined ? 1 : 0) +
+      (subject !== undefined ? 1 : 0) +
+      (query !== undefined ? 1 : 0);
+    // One selector. Threshold belongs to a query, and a query without it is not a search.
+    if (selectors !== 1 || (query !== undefined) !== (threshold !== undefined)) {
+      throw new Error("Pass exactly one of fact_id, subject, or query");
+    }
+    const sources = await canvasSourceTexts(ops, project);
+    if (query !== undefined) {
+      if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+        throw new Error("threshold must be a number from 0 to 1");
+      }
+      return collectByQuery(sources, query, threshold);
+    }
+    if (factId !== undefined) return collect(sources, factId);
+    return collectBySubject(sources, subject as string);
+  },
 };
 
 /** Invoke shared edit ops by MCP tool name. */
 export async function callMcpTool(
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   name: string,
   args: Record<string, unknown> = {},
 ): Promise<McpToolResult> {
@@ -540,7 +729,7 @@ export async function callMcpTool(
  * result keeps its shape. Delivered once. A failing notice read never fails the tool.
  */
 async function withNotices(
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   args: Record<string, unknown>,
   result: McpToolResult,
 ): Promise<McpToolResult> {
@@ -573,7 +762,7 @@ export type JsonRpcResponse = {
 };
 
 type RpcHandler = (
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   id: JsonRpcId,
   params: unknown,
 ) => Promise<JsonRpcResponse>;
@@ -615,7 +804,7 @@ const RPC_HANDLERS: Record<string, RpcHandler> = {
 };
 
 export async function handleMcpJsonRpc(
-  ops: CanvasEditOps,
+  ops: McpCanvasOps,
   request: JsonRpcRequest,
 ): Promise<JsonRpcResponse | null> {
   const id = request.id ?? null;
@@ -638,11 +827,10 @@ export async function handleMcpJsonRpc(
 }
 
 export function encodeMcpMessage(msg: unknown): Buffer {
-  const body = Buffer.from(JSON.stringify(msg), "utf8");
-  const header = Buffer.from(
-    `Content-Length: ${body.length}\r\n\r\n`,
-    "utf8",
-  );
+  // Buffer.from(text) is utf8. Passing "utf8" is the same, and "" still encodes utf8,
+  // so the encoding argument cannot be checked.
+  const body = Buffer.from(JSON.stringify(msg));
+  const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`);
   return Buffer.concat([header, body]);
 }
 
@@ -654,17 +842,17 @@ export function extractMcpMessages(buffer: string): {
   const messages: JsonRpcRequest[] = [];
   let rest = buffer;
 
-  while (rest.length > 0) {
+  // Empty rest is length 0. `> 0` vs `>= 0` is the same: an empty buffer breaks below.
+  while (rest.length) {
     const trimmedStart = rest.trimStart();
     if (trimmedStart.startsWith("{")) {
-      const lead = rest.length - trimmedStart.length;
-      const from = lead > 0 ? rest.slice(lead) : rest;
-      const nl = from.indexOf("\n");
+      // trimStart already dropped the lead; slice(0) would be this same string.
+      // A line that starts with `{` is never empty after trim.
+      const nl = trimmedStart.indexOf("\n");
       if (nl === -1) break;
-      const line = from.slice(0, nl).trim();
-      rest = from.slice(nl + 1);
-      // ponytail: trim already dropped blank lines via trimStart on next iter; parse non-empty only
-      if (line.length > 0) messages.push(JSON.parse(line) as JsonRpcRequest);
+      const line = trimmedStart.slice(0, nl).trim();
+      rest = trimmedStart.slice(nl + 1);
+      messages.push(JSON.parse(line) as JsonRpcRequest);
       continue;
     }
 
@@ -688,22 +876,20 @@ export function extractMcpMessages(buffer: string): {
 }
 
 export type StartMcpStdioOptions = {
-  root: string;
   stdin?: Readable;
   stdout?: Writable;
-  ops?: CanvasEditOps;
+  /** Edit operations from the shell. This package does not open a canvas store. */
+  ops: McpCanvasOps;
 };
 
 /**
- * Start stdio MCP against a canvases root. Does not start HTTP.
- * Tools call createCanvasEditOps(LocalFilesystemCanvasStore(root)).
+ * Start stdio MCP. Does not start HTTP and does not open a filesystem.
+ * The shell builds the canvas store and passes `ops`.
  */
 export async function startMcpStdioServer(
   options: StartMcpStdioOptions,
 ): Promise<void> {
-  const ops =
-    options.ops ??
-    createCanvasEditOps(LocalFilesystemCanvasStore(options.root));
+  const ops = options.ops;
   const stdin = options.stdin ?? process.stdin;
   const stdout = options.stdout ?? process.stdout;
 
@@ -740,7 +926,9 @@ export async function startMcpStdioServer(
     let queue: Promise<void> = Promise.resolve();
     stdin.on("error", reject);
     stdin.on("data", (chunk: Buffer | string) => {
-      pending += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      // String#toString ignores the encoding and returns the text. Buffer#toString("") throws,
+      // so a wrong encoding fails instead of silently matching utf8.
+      pending += (chunk as Buffer).toString("utf8");
       queue = queue.then(processPending).catch(reject);
     });
     stdin.on("end", () => void queue.then(() => resolve()));

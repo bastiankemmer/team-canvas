@@ -264,7 +264,8 @@ async function pruneEmptyParents(root: string, fromId: string): Promise<void> {
     if (outsideRoot(path.relative(rootReal, here)) || path.relative(rootReal, here) === "") return;
     const ents = await readdir(dir);
     if (ents.length > 0) return;
-    await rm(dir);
+    // rm without recursive refuses a directory, so an emptied parent would survive the move.
+    await rm(dir, { recursive: true });
     dir = path.dirname(dir);
   }
 }

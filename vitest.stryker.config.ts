@@ -1,6 +1,17 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
+const repoRoot = path.dirname(fileURLToPath(import.meta.url));
+
 export default defineConfig({
+  // Mutation edits the TypeScript source. Tests import the package name, which otherwise resolves to dist.
+  resolve: {
+    alias: {
+      "@team-canvas/mcp": path.join(repoRoot, "packages/mcp/index.ts"),
+      "@team-canvas/ontology": path.join(repoRoot, "packages/ontology/index.js"),
+    },
+  },
   test: {
     environment: "node",
     include: [
@@ -8,13 +19,14 @@ export default defineConfig({
       "src/app/edit/canvas-edit-ops.test.ts",
       "src/app/edit/canvas-orientation.test.ts",
       "src/adapters/mcp/mcp-server.test.ts",
-      "test/acceptance/edit-acceptance.test.ts",
-      "src/adapters/store/local-fs-canvas-store.test.ts",
-      "src/adapters/http/http-server.test.ts",
-      "src/adapters/http/shell.test.ts",
-      "src/sdk/ui-primitives.test.tsx",
-      "src/client/canvas-state-bridge.test.ts",
-      "test/acceptance/host-ui-bundle.test.ts",
+      "src/adapters/mcp/mcp-package-tools.test.ts",
+      "test/ontology-literals.test.ts",
+      "test/collect-fact-turtle.test.ts",
+      "test/collect-subject-turtle.test.ts",
+      "test/mcp-collect-turtle.test.ts",
+      "test/fact-declaration.test.ts",
+      "test/fact-vector-score.test.ts",
+      "test/mcp-collect-query-turtle.test.ts",
     ],
     pool: "forks",
     maxWorkers: 1,
@@ -27,6 +39,7 @@ export default defineConfig({
         ".stryker-tmp/**",
         "coverage/**",
         "src/**/*.test.{ts,tsx}",
+        "packages/human/**/*.test.{ts,tsx}",
         "test/**",
         "examples/**",
       ],

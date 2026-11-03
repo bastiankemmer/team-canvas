@@ -503,6 +503,19 @@ export function CanvasLink({
   );
 }
 
+export type FactProps = {
+  id: string;
+  subject: string;
+  claim: string;
+  area: string;
+  heading: string;
+};
+
+/** Machine claim for collect. The <Text> beside this tag is the human line. */
+export function Fact(_props: FactProps): null {
+  return null;
+}
+
 export type CardSize = "base" | "lg";
 export type CardVariant = "default" | "borderless";
 

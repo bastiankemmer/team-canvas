@@ -3,7 +3,7 @@
   "version": "0.6.1",
   "description": "Self-hosted server that renders .canvas.tsx files (one React component per file) in the browser, with a live editor and an MCP server for AI agents.",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p packages/human/tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "rm -rf dist && npm run build && npm test"
@@ -19,18 +19,25 @@
   "author": "bastiankemmer",
   "license": "MIT",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "files": [
     "dist",
-    "src/sdk",
+    "packages/human",
+    "packages/human/dist",
+    "packages/mcp",
+    "packages/mcp/dist",
+    "packages/ontology",
     "src/client",
     "!**/*.test.*"
   ],
   "exports": {
     "./package.json": "./package.json",
     "./canvas": {
-      "types": "./dist/sdk/index.d.ts",
-      "import": "./dist/sdk/index.js",
-      "default": "./dist/sdk/index.js"
+      "types": "./packages/human/dist/index.d.ts",
+      "import": "./packages/human/dist/index.js",
+      "default": "./packages/human/dist/index.js"
     }
   },
   "bin": {

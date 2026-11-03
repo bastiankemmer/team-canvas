@@ -4,10 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { createCanvasEditOps } from "../../app/edit/canvas-edit-ops.js";
-import type { CanvasStore } from "../../ports/canvas-store.js";
-import { CLI_USAGE, parseMcpArgs, runCli } from "../../cli.js";
-import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
 import {
   callMcpTool,
   encodeMcpMessage,
@@ -16,8 +12,11 @@ import {
   MCP_PROTOCOL_VERSION,
   MCP_TOOL_DEFS,
   startMcpStdioServer,
-  META_PROPS,
-} from "./mcp-server.js";
+} from "@team-canvas/mcp";
+import { createCanvasEditOps } from "../../app/edit/canvas-edit-ops.js";
+import type { CanvasStore } from "../../ports/canvas-store.js";
+import { CLI_USAGE, parseMcpArgs, runCli } from "../../cli.js";
+import { LocalFilesystemCanvasStore } from "../store/local-fs-canvas-store.js";
 
 const TWO_CARDS = `import { Button, Card, CardBody, CardHeader, Stack, Text } from "team-canvas/canvas";
 
@@ -45,6 +44,22 @@ export default function OrientedDemo() {
 }
 `;
 
+// Literals a client would read from tools/list. Spreading the server export would
+// change the expected value together with a mutated schema.
+const CLIENT_META = {
+  actor: {
+    type: "string",
+    description:
+      "Your stable agent or chat id. Required for writes, which also need the canvas lease. Pass it on every call to receive notices",
+  },
+  reason: { type: "string", description: "Why you are making this change (kept in the change log)" },
+  topic: {
+    type: "string",
+    description:
+      "Decision topic this change belongs to (lowercase, e.g. auth-session-storage), see declare_intent",
+  },
+};
+
 async function tempOps(source = TWO_CARDS) {
   const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-"));
   await writeFile(path.join(root, "demo.canvas.tsx"), source, "utf8");
@@ -67,6 +82,7 @@ describe("mcp stdio server", () => {
       "list_canvases",
       "create_canvas",
       "read_source",
+      "read_facts",
       "read_sources",
       "write_source",
       "replace_in_source",
@@ -86,6 +102,7 @@ describe("mcp stdio server", () => {
       "list_topics",
       "escalate_topic",
       "list_changes",
+      "collect",
     ]);
 
     const list = await callMcpTool(ops, "list_canvases");
@@ -333,6 +350,7 @@ describe("mcp stdio server", () => {
       "list_canvases",
       "create_canvas",
       "read_source",
+      "read_facts",
       "read_sources",
       "write_source",
       "replace_in_source",
@@ -352,6 +370,7 @@ describe("mcp stdio server", () => {
       "list_topics",
       "escalate_topic",
       "list_changes",
+      "collect",
     ]);
     expect(
       MCP_TOOL_DEFS.find((t) => t.name === "read_source")?.inputSchema,
@@ -365,7 +384,7 @@ describe("mcp stdio server", () => {
     ).toEqual({
       type: "object",
       properties: {
-        ...META_PROPS,
+        ...CLIENT_META,
         id: { type: "string" },
         source: { type: "string" },
       },
@@ -392,7 +411,7 @@ describe("mcp stdio server", () => {
       MCP_TOOL_DEFS.find((t) => t.name === "add_oriented")?.inputSchema,
     ).toEqual({
       type: "object",
-      properties: { ...META_PROPS, id: { type: "string" } },
+      properties: { ...CLIENT_META, id: { type: "string" } },
       required: ["id", "actor"],
     });
     expect(
@@ -400,7 +419,7 @@ describe("mcp stdio server", () => {
     ).toEqual({
       type: "object",
       properties: {
-        ...META_PROPS,
+        ...CLIENT_META,
         id: { type: "string" },
         slots: {
           type: "object",
@@ -534,7 +553,7 @@ describe("mcp stdio server", () => {
       inputSchema: {
         type: "object",
         properties: {
-          ...META_PROPS,
+          ...CLIENT_META,
           id: { type: "string" },
           source: { type: "string" },
         },
@@ -569,7 +588,7 @@ describe("mcp stdio server", () => {
       inputSchema: {
         type: "object",
         properties: {
-          ...META_PROPS,
+          ...CLIENT_META,
           id: { type: "string" },
           source: { type: "string" },
         },
@@ -583,7 +602,7 @@ describe("mcp stdio server", () => {
       inputSchema: {
         type: "object",
         properties: {
-          ...META_PROPS,
+          ...CLIENT_META,
           id: { type: "string" },
           old_string: { type: "string" },
           new_string: { type: "string" },
@@ -607,7 +626,7 @@ describe("mcp stdio server", () => {
     expect(byName.check_canvas).toEqual({
       name: "check_canvas",
       description:
-        "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export",
+        "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export. A canvas with no literal Fact also gets a warning, because collect and read_facts cannot see it. An id ending in index, roadmap, brief, research, or phase-N is exempt",
       inputSchema: {
         type: "object",
         properties: idProp,
@@ -642,7 +661,7 @@ describe("mcp stdio server", () => {
         "Clone the repeating sibling with blank slots; returns the new slots (id, label) in document order",
       inputSchema: {
         type: "object",
-        properties: { ...META_PROPS, ...idProp },
+        properties: { ...CLIENT_META, ...idProp },
         required: ["id", "actor"],
       },
     });
@@ -653,7 +672,7 @@ describe("mcp stdio server", () => {
       inputSchema: {
         type: "object",
         properties: {
-          ...META_PROPS,
+          ...CLIENT_META,
           id: { type: "string" },
           slots: {
             type: "object",
@@ -663,6 +682,107 @@ describe("mcp stdio server", () => {
         required: ["id", "slots", "actor"],
       },
     });
+    expect(byName.move).toEqual({
+      name: "move",
+      description:
+        "Move a canvas to a new id, or a folder of canvases onto a new folder. from/to are paths relative to the store root. Without folder, from is one canvas id; if from is only a folder, the folder is moved. folder:true moves the whole directory, including non-canvas files. match is a filename glob (* is the only wildcard), for example *.canvas.tsx or *Test.canvas.tsx, and moves only matching canvases inside the folder (state sidecars move with them). Needs the lease on every canvas you move and on each new id. Does not rewrite CanvasLink targets",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...CLIENT_META,
+          from: { type: "string", description: "Canvas id, or folder path" },
+          to: { type: "string", description: "New canvas id, or destination folder" },
+          folder: {
+            type: "boolean",
+            description:
+              "Move the directory at from. When from is both a canvas file and a folder, this chooses the folder; otherwise the canvas file is moved",
+          },
+          match: {
+            type: "string",
+            description:
+              "Filename glob. * is the only wildcard. Matched against the canvas filename, for example *.canvas.tsx or *Test.canvas.tsx",
+          },
+        },
+        required: ["from", "to", "actor"],
+      },
+    });
+    expect(byName.acquire_lease).toEqual({
+      name: "acquire_lease",
+      description:
+        "Take the write lease on a canvas before writing it (also for a canvas you are about to create). Returns { acquired, holder, expiresAt }. acquired:false means another agent holds it: they are told you wait, and you get a notice when it is released. Call again to renew; the lease expires on its own after ttl_seconds",
+      inputSchema: {
+        type: "object",
+        properties: {
+          actor: { type: "string" },
+          canvas: { type: "string" },
+          ttl_seconds: { type: "number", description: "How long the lease holds (default 300, max 3600)" },
+        },
+        required: ["actor", "canvas"],
+      },
+    });
+    expect(byName.release_lease).toEqual({
+      name: "release_lease",
+      description:
+        "Give the write lease on a canvas back when you are done, so others can write. Only the holder can release",
+      inputSchema: {
+        type: "object",
+        properties: { actor: { type: "string" }, canvas: { type: "string" } },
+        required: ["actor", "canvas"],
+      },
+    });
+    expect(byName.list_leases).toEqual({
+      name: "list_leases",
+      description: "List the live write leases: canvas, holder, expiry and who is waiting",
+      inputSchema: { type: "object", properties: {} },
+    });
+    expect(byName.declare_intent).toEqual({
+      name: "declare_intent",
+      description:
+        "Before you decide or build something other agents might also decide, claim a topic with your plan. Returns conflict:true when another agent holds a different plan (or the topic is settled differently), plus related topics on the same canvas. Call it again to concede (same plan as theirs settles it) or insist; after 2 insisted rounds it goes to a human. Use list_topics first to reuse an existing topic name",
+      inputSchema: {
+        type: "object",
+        properties: {
+          actor: { type: "string" },
+          topic: { type: "string", description: "Lowercase letters, digits, . _ - (max 80)" },
+          plan: { type: "string", description: "What you will do / have decided, in one sentence" },
+          reason: { type: "string" },
+          canvas: { type: "string", description: "Canvas id this is about, to detect overlap" },
+          ttl_seconds: { type: "number", description: "How long your claim holds (default 1800)" },
+        },
+        required: ["actor", "topic", "plan"],
+      },
+    });
+    expect(byName.list_topics).toEqual({
+      name: "list_topics",
+      description:
+        "List decision topics with every agent's plan and any settled decision. Optional status filter: open, escalated, settled",
+      inputSchema: { type: "object", properties: { status: { type: "string" } } },
+    });
+    expect(byName.escalate_topic).toEqual({
+      name: "escalate_topic",
+      description:
+        "Hand an open conflict to a human now instead of waiting out the rounds. Do not change your plan until it is settled",
+      inputSchema: {
+        type: "object",
+        properties: { actor: { type: "string" }, topic: { type: "string" } },
+        required: ["actor", "topic"],
+      },
+    });
+    expect(byName.list_changes).toEqual({
+      name: "list_changes",
+      description:
+        "Change log: who changed which canvas, with the reason and topic. Filter by canvas, topic or actor; newest last",
+      inputSchema: {
+        type: "object",
+        properties: {
+          canvas: { type: "string" },
+          topic: { type: "string" },
+          actor: { type: "string" },
+          limit: { type: "number" },
+        },
+      },
+    });
+    expect(tools).toHaveLength(24);
   });
 
   it("mutation:extractMcpMessages: NDJSON, framing, incomplete, missing length", () => {
@@ -745,6 +865,19 @@ describe("mcp stdio server", () => {
     const tailed = extractMcpMessages(withTail);
     expect(tailed.messages).toEqual([{ id: 3, method: "ping" }]);
     expect(tailed.rest).toBe("TAIL");
+
+    // Nothing buffered yet: no message, and the remainder stays empty.
+    expect(extractMcpMessages("")).toEqual({ messages: [], rest: "" });
+
+    // JSON.parse keeps a trailing CR, but not a non-breaking space. trim drops that space.
+    const nbsp = extractMcpMessages('{"id":4,"method":"ping"}\u00A0\n');
+    expect(nbsp.messages).toEqual([{ id: 4, method: "ping" }]);
+    expect(nbsp.rest).toBe("");
+
+    // Content-Length is read from the header only. A length sitting in the body is not a frame.
+    expect(() => extractMcpMessages("X: y\r\n\r\nContent-Length: 2\r\n\r\n{}")).toThrow(
+      /MCP framing missing Content-Length/,
+    );
   });
 
   it("mutation:stdio: newline framing and Buffer chunks", async () => {
@@ -804,7 +937,7 @@ describe("mcp stdio server", () => {
     ]);
   });
 
-  it("mutation:stdio: Content-Length framing via default ops factory", async () => {
+  it("mutation:stdio: Content-Length framing stays framed when the shell passes the store", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-frame-"));
     await writeFile(
       path.join(root, "demo.canvas.tsx"),
@@ -822,9 +955,9 @@ describe("mcp stdio server", () => {
       out += c.toString("utf8");
       if (out.includes('"id":2') && out.includes("demo")) resolveOut();
     });
-    // No ops — exercises createCanvasEditOps(LocalFilesystemCanvasStore(root))
-    // (?? not && — without ops must still serve)
-    const done = startMcpStdioServer({ root, stdin, stdout });
+    // The shell opens the filesystem store and passes ops. The package does not.
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root));
+    const done = startMcpStdioServer({ stdin, stdout, ops });
     stdin.write(
       Buffer.concat([
         encodeMcpMessage({ jsonrpc: "2.0", id: 1, method: "ping" }),
@@ -977,6 +1110,56 @@ describe("mcp stdio server", () => {
     await done;
     expect(out).toMatch(/Content-Length:/);
     expect(out).toContain('"id":1');
+  });
+
+  it("a newline message sent after a Content-Length reply stays framed, so the server does not switch back to newline JSON", async () => {
+    const { root, ops } = await tempOps();
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    let out = "";
+    let resolveFirst!: () => void;
+    let resolveSecond!: () => void;
+    const gotFirst = new Promise<void>((r) => {
+      resolveFirst = r;
+    });
+    const gotSecond = new Promise<void>((r) => {
+      resolveSecond = r;
+    });
+    stdout.on("data", (c: Buffer) => {
+      out += c.toString("utf8");
+      if (out.includes('"id":1')) resolveFirst();
+      if (out.includes('"id":2')) resolveSecond();
+    });
+    const done = startMcpStdioServer({ root, stdin, stdout, ops });
+    stdin.write(encodeMcpMessage({ jsonrpc: "2.0", id: 1, method: "ping" }));
+    await gotFirst;
+    stdin.write('{"jsonrpc":"2.0","id":2,"method":"ping"}\n');
+    await gotSecond;
+    stdin.end();
+    await done;
+    expect(out.split(/Content-Length:/i).length - 1).toBe(2);
+    expect(out).toContain('"id":2');
+  });
+
+  it("a non-string stdio chunk is decoded as utf8, so the default string conversion cannot replace that decode", async () => {
+    const { root, ops } = await tempOps();
+    const stdin = new PassThrough({ objectMode: true });
+    const stdout = new PassThrough();
+    let out = "";
+    stdout.on("data", (c: Buffer) => {
+      out += c.toString("utf8");
+    });
+    const line = '{"jsonrpc":"2.0","id":1,"method":"ping"}\n';
+    const done = startMcpStdioServer({ root, stdin, stdout, ops });
+    stdin.write({
+      toString(encoding?: string) {
+        return encoding === "utf8" ? line : "not-json";
+      },
+    });
+    stdin.end();
+    await done;
+    expect(out).not.toMatch(/Content-Length:/);
+    expect(JSON.parse(out.trim())).toMatchObject({ id: 1, result: {} });
   });
 
   it("mutation:stdio: stdin error rejects", async () => {
@@ -1253,6 +1436,39 @@ describe("parseMcpArgs", () => {
     expect(both.isError).toBe(true);
     expect(both.content[0]!.text).toMatch(/not both/);
     expect(await readFile(file, "utf8")).toBe("alpha beta");
+
+    // One of the two strings is enough to mean a single replacement. Dropping that side would apply edits only.
+    const onlyOld = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      old_string: "alpha",
+      edits: [{ old_string: "beta", new_string: "BETA" }],
+    });
+    expect(onlyOld.isError).toBe(true);
+    expect(onlyOld.content[0]!.text).toMatch(/not both/);
+    expect(await readFile(file, "utf8")).toBe("alpha beta");
+
+    const onlyNew = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      new_string: "ALPHA",
+      edits: [{ old_string: "beta", new_string: "BETA" }],
+    });
+    expect(onlyNew.isError).toBe(true);
+    expect(onlyNew.content[0]!.text).toMatch(/not both/);
+    expect(await readFile(file, "utf8")).toBe("alpha beta");
+
+    const missingNew = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      old_string: "alpha",
+    });
+    expect(missingNew.isError).toBe(true);
+    expect(missingNew.content[0]!.text).toBe("Missing or invalid argument: new_string");
+    const missingOld = await callMcpTool(ops, "replace_in_source", {
+      id: "demo",
+      new_string: "ALPHA",
+    });
+    expect(missingOld.isError).toBe(true);
+    expect(missingOld.content[0]!.text).toBe("Missing or invalid argument: old_string");
+    expect(await readFile(file, "utf8")).toBe("alpha beta");
   });
 
   it("replace_in_source rejects an edits entry that is not an object so it is not applied as a replacement", async () => {
@@ -1336,7 +1552,7 @@ describe("parseMcpArgs", () => {
 
     const good = await callMcpTool(ops, "check_canvas", { id: "demo" });
     expect(good.isError).toBe(false);
-    expect(JSON.parse(good.content[0]!.text)).toEqual({ ok: true, id: "demo" });
+    expect(JSON.parse(good.content[0]!.text)).toMatchObject({ ok: true, id: "demo" });
 
     await callMcpTool(ops, "replace_in_source", { id: "demo", old_string: "</div>", new_string: "" });
     const bad = JSON.parse((await callMcpTool(ops, "check_canvas", { id: "demo" })).content[0]!.text);
@@ -1345,6 +1561,52 @@ describe("parseMcpArgs", () => {
 
     expect((await callMcpTool(ops, "check_canvas", { id: "nope" })).isError).toBe(true);
     expect((await callMcpTool(ops, "check_canvas", {})).isError).toBe(true);
+  });
+
+  it("check_canvas warns when a canvas has no literal Fact, so an agent learns collect cannot see it, while a canvas with a Fact and the index and epic status canvases stay quiet", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-check-fact-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    const plain = 'import { Text } from "team-canvas/canvas";\nexport default function A() { return <Text>hi</Text> }\n';
+    const withFact = [
+      'import { Fact, Text } from "team-canvas/canvas";',
+      "export default function B() {",
+      '  return <><Fact id="b-rule" subject="b" claim="B has a rule." area="notes/with-fact" heading="Rule" /><Text>B has a rule.</Text></>;',
+      "}",
+      "",
+    ].join("\n");
+    const dynamicFact = [
+      'import { Fact } from "team-canvas/canvas";',
+      'const id = "c-rule";',
+      'export default function C() { return <Fact id={id} subject="c" claim="C." area="notes/dynamic" heading="C" /> }',
+      "",
+    ].join("\n");
+    await mkdir(path.join(root, "notes"), { recursive: true });
+    await writeFile(path.join(root, "notes", "plain.canvas.tsx"), plain, "utf8");
+    await writeFile(path.join(root, "notes", "with-fact.canvas.tsx"), withFact, "utf8");
+    await writeFile(path.join(root, "notes", "dynamic.canvas.tsx"), dynamicFact, "utf8");
+    await writeFile(path.join(root, "notes", "index.canvas.tsx"), plain, "utf8");
+    await writeFile(path.join(root, "index.canvas.tsx"), plain, "utf8");
+    for (const name of ["roadmap", "brief", "research", "phase-12", "phase-x", "my-roadmap"]) {
+      await writeFile(path.join(root, "notes", `${name}.canvas.tsx`), plain, "utf8");
+    }
+
+    const check = async (id: string) =>
+      JSON.parse((await callMcpTool(ops, "check_canvas", { id })).content[0]!.text);
+
+    const warned = await check("notes/plain");
+    expect(warned).toMatchObject({ ok: true, id: "notes/plain" });
+    expect(warned.warning).toContain("collect and read_facts return nothing");
+    // A Fact whose id is a variable is ignored by collect, so it still warns.
+    expect((await check("notes/dynamic")).warning).toContain("No literal <Fact>");
+    expect(await check("notes/with-fact")).toEqual({ ok: true, id: "notes/with-fact" });
+    expect(await check("notes/index")).toEqual({ ok: true, id: "notes/index" });
+    expect(await check("index")).toEqual({ ok: true, id: "index" });
+    for (const name of ["roadmap", "brief", "research", "phase-12"]) {
+      expect(await check(`notes/${name}`)).toEqual({ ok: true, id: `notes/${name}` });
+    }
+    // Only the whole last segment is exempt, so a lookalike name still warns.
+    expect((await check("notes/phase-x")).warning).toContain("No literal <Fact>");
+    expect((await check("notes/my-roadmap")).warning).toContain("No literal <Fact>");
   });
 
   it("@task-2: list_links returns the same JSON as listLinks, errors with the ops message, and describes outgoing canvas ids plus read_source and search_source", async () => {
@@ -1683,5 +1945,268 @@ describe("parseMcpArgs", () => {
       const res = await callMcpTool(ops, "list_canvases", bad as Record<string, unknown>);
       expect(res.isError, JSON.stringify(bad)).toBe(true);
     }
+  });
+
+  it("list_canvases names the argument when folder is not a string or depth is not a number, so a skipped check is not reported as a store error", async () => {
+    const { ops } = await tempOps();
+    const folder = await callMcpTool(ops, "list_canvases", { folder: 123 });
+    expect(folder.isError).toBe(true);
+    expect(folder.content[0]!.text).toBe("Invalid argument: folder");
+    const depth = await callMcpTool(ops, "list_canvases", { depth: "1" });
+    expect(depth.isError).toBe(true);
+    expect(depth.content[0]!.text).toBe("Invalid argument: depth");
+  });
+
+  it("notices are attached only for a non-blank actor, so a blank actor does not read the queue and a named actor still receives them", async () => {
+    const seen: string[] = [];
+    const ops = {
+      readSource: async () => "source-text",
+      settlement: {
+        takeNotices: async (actor: string) => {
+          seen.push(actor);
+          return actor === "alice" ? [{ kind: "conflict" }] : [];
+        },
+      },
+    } as Parameters<typeof callMcpTool>[0];
+
+    const blank = await callMcpTool(ops, "read_source", { id: "demo", actor: "   " });
+    expect(blank.isError).toBeFalsy();
+    expect(blank.content).toHaveLength(1);
+    expect(blank.content[0]!.text).toBe("source-text");
+    expect(seen).toEqual([]);
+
+    const missing = await callMcpTool(ops, "read_source", { id: "demo" });
+    expect(missing.content).toHaveLength(1);
+    expect(seen).toEqual([]);
+
+    const alice = await callMcpTool(ops, "read_source", { id: "demo", actor: "alice" });
+    expect(seen).toEqual(["alice"]);
+    expect(alice.content).toHaveLength(2);
+    expect(alice.content[0]!.text).toBe("source-text");
+    expect(JSON.parse(alice.content[1]!.text)).toEqual({
+      notices: [{ kind: "conflict" }],
+    });
+  });
+
+  it("lease, topic, move, and change-log tools return the settlement result, so a dropped handler is not an empty success", async () => {
+    const { root, ops } = await tempOps();
+    // A write that matches the file already on disk is not logged.
+    const source = "export default function Renamed() { return null }\n";
+
+    const wrote = await callMcpTool(ops, "write_source", {
+      id: "demo",
+      source,
+      actor: "alice",
+      reason: "rename",
+      topic: "db",
+    });
+    expect(JSON.parse(wrote.content[0]!.text)).toEqual({ ok: true, id: "demo" });
+    const changes = await callMcpTool(ops, "list_changes", {
+      canvas: "demo",
+      topic: "db",
+      actor: "alice",
+      limit: 1,
+    });
+    const log = JSON.parse(changes.content[0]!.text) as Array<Record<string, unknown>>;
+    expect(log).toHaveLength(1);
+    expect(log[0]).toMatchObject({
+      actor: "alice",
+      reason: "rename",
+      topic: "db",
+      canvas: "demo",
+      tool: "write_source",
+    });
+
+    const acquired = await callMcpTool(ops, "acquire_lease", {
+      actor: "alice",
+      canvas: "demo",
+      ttl_seconds: 60,
+    });
+    expect(JSON.parse(acquired.content[0]!.text)).toMatchObject({
+      acquired: true,
+      holder: "alice",
+      canvas: "demo",
+    });
+    const leases = JSON.parse((await callMcpTool(ops, "list_leases")).content[0]!.text) as Array<{
+      canvas: string;
+      actor: string;
+    }>;
+    expect(leases).toEqual([expect.objectContaining({ canvas: "demo", actor: "alice" })]);
+    const released = await callMcpTool(ops, "release_lease", { actor: "alice", canvas: "demo" });
+    expect(JSON.parse(released.content[0]!.text)).toEqual({ released: true });
+    expect(JSON.parse((await callMcpTool(ops, "list_leases")).content[0]!.text)).toEqual([]);
+
+    const claimed = await callMcpTool(ops, "declare_intent", {
+      actor: "alice",
+      topic: "db",
+      plan: "postgres",
+      reason: "fits",
+      canvas: "demo",
+      ttl_seconds: 100,
+    });
+    expect(JSON.parse(claimed.content[0]!.text)).toMatchObject({ conflict: false, topic: "db" });
+    for (const status of ["open", "escalated", "settled"]) {
+      const listed = await callMcpTool(ops, "list_topics", { status });
+      expect(listed.isError, status).toBeFalsy();
+      const topics = JSON.parse(listed.content[0]!.text) as Array<{ topic: string }>;
+      expect(Array.isArray(topics), status).toBe(true);
+      if (status === "open") expect(topics.map((t) => t.topic)).toContain("db");
+      else expect(topics.map((t) => t.topic)).not.toContain("db");
+    }
+    const badStatus = await callMcpTool(ops, "list_topics", { status: "nope" });
+    expect(badStatus.isError).toBe(true);
+    expect(badStatus.content[0]!.text).toBe("status must be one of: open, escalated, settled");
+
+    const clash = await callMcpTool(ops, "declare_intent", {
+      actor: "bob",
+      topic: "db",
+      plan: "mongo",
+    });
+    expect(JSON.parse(clash.content[0]!.text).conflict).toBe(true);
+    const escalated = await callMcpTool(ops, "escalate_topic", { actor: "alice", topic: "db" });
+    expect(JSON.parse(escalated.content[0]!.text).status).toBe("escalated");
+    const escalatedTopics = JSON.parse(
+      (await callMcpTool(ops, "list_topics", { status: "escalated" })).content[0]!.text,
+    ) as Array<{ topic: string }>;
+    expect(escalatedTopics.map((t) => t.topic)).toContain("db");
+
+    const moved = await callMcpTool(ops, "move", {
+      from: "demo",
+      to: "relocated",
+      actor: "alice",
+      reason: "rename",
+      topic: "db",
+    });
+    expect(moved.isError).toBeFalsy();
+    expect(JSON.parse(moved.content[0]!.text)).toEqual({
+      ok: true,
+      moved: [{ from: "demo", to: "relocated" }],
+    });
+    expect(await readFile(path.join(root, "relocated.canvas.tsx"), "utf8")).toBe(source);
+  });
+
+  it("move forwards folder only when it is boolean true, and forwards match on the match key", async () => {
+    const seen: Array<{ from: string; to: string; opts: { folder?: boolean; match?: string } }> = [];
+    const ops = {
+      move: async (from: string, to: string, opts: { folder?: boolean; match?: string }) => {
+        seen.push({ from, to, opts });
+        return { ok: true, moved: [] };
+      },
+      settlement: { takeNotices: async () => [] },
+    } as Parameters<typeof callMcpTool>[0];
+
+    const yes = await callMcpTool(ops, "move", {
+      from: "box",
+      to: "out",
+      folder: true,
+      match: "*.canvas.tsx",
+    });
+    expect(yes.isError).toBeFalsy();
+    expect(Object.keys(seen[0]!.opts)).toEqual(["folder", "match"]);
+    expect(seen[0]).toEqual({
+      from: "box",
+      to: "out",
+      opts: { folder: true, match: "*.canvas.tsx" },
+    });
+
+    await callMcpTool(ops, "move", { from: "box", to: "out", folder: "yes" });
+    expect(seen[1]!.opts).toEqual({ folder: false, match: undefined });
+    expect(Object.keys(seen[1]!.opts)).toEqual(["folder", "match"]);
+  });
+
+  it("rejects an unknown topic status without calling listTopics, and still lists topics when status is omitted", async () => {
+    const seen: unknown[] = [];
+    const ops = {
+      settlement: {
+        listTopics: async (status?: string) => {
+          seen.push(status);
+          return [];
+        },
+        takeNotices: async () => [],
+      },
+    } as Parameters<typeof callMcpTool>[0];
+
+    const bad = await callMcpTool(ops, "list_topics", { status: "nope" });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0]!.text).toBe("status must be one of: open, escalated, settled");
+    expect(seen).toEqual([]);
+
+    const all = await callMcpTool(ops, "list_topics", {});
+    expect(all.isError).toBeFalsy();
+    expect(seen).toEqual([undefined]);
+
+    const open = await callMcpTool(ops, "list_topics", { status: "open" });
+    expect(open.isError).toBeFalsy();
+    expect(seen).toEqual([undefined, "open"]);
+  });
+
+  it("passes canvas, topic, actor, and a numeric limit to listChanges, and omits a limit that is not a number", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const ops = {
+      settlement: {
+        listChanges: async (filter: Record<string, unknown>) => {
+          seen.push(filter);
+          return [];
+        },
+        takeNotices: async () => [],
+      },
+    } as Parameters<typeof callMcpTool>[0];
+
+    const listed = await callMcpTool(ops, "list_changes", {
+      canvas: "demo",
+      topic: "db",
+      actor: "ada",
+      limit: 0,
+    });
+    expect(listed.isError).toBeFalsy();
+    expect(Object.keys(seen[0]!).sort()).toEqual(["actor", "canvas", "limit", "topic"]);
+    expect(seen[0]).toEqual({ canvas: "demo", topic: "db", actor: "ada", limit: 0 });
+
+    await callMcpTool(ops, "list_changes", {
+      canvas: "demo",
+      topic: "db",
+      actor: "ada",
+      limit: "4",
+    });
+    expect(seen[1]).toEqual({ canvas: "demo", topic: "db", actor: "ada", limit: undefined });
+  });
+
+  it("trims the actor before takeNotices, and does not append content when that actor has no notices", async () => {
+    const seen: string[] = [];
+    const ops = {
+      readSource: async () => "body",
+      settlement: {
+        takeNotices: async (actor: string) => {
+          seen.push(actor);
+          return [];
+        },
+      },
+    } as Parameters<typeof callMcpTool>[0];
+
+    const result = await callMcpTool(ops, "read_source", { id: "demo", actor: "  ada  " });
+    expect(seen).toEqual(["ada"]);
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0]!.text).toBe("body");
+  });
+
+  it("parses a Buffer chunk and a string chunk as utf8 messages", async () => {
+    const { root, ops } = await tempOps();
+    const stdin = new PassThrough({ objectMode: true });
+    const stdout = new PassThrough();
+    let out = "";
+    stdout.on("data", (c: Buffer) => {
+      out += c.toString("utf8");
+    });
+    const done = startMcpStdioServer({ root, stdin, stdout, ops });
+    stdin.write(Buffer.from('{"jsonrpc":"2.0","id":1,"method":"ping"}\n', "utf8"));
+    stdin.write('{"jsonrpc":"2.0","id":2,"method":"ping"}\n');
+    stdin.end();
+    await done;
+    const lines = out
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { id: number });
+    expect(lines.map((line) => line.id)).toEqual([1, 2]);
   });
 });

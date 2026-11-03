@@ -29,9 +29,6 @@ describe("parseServeArgs edge paths", () => {
     expect(() => parseServeArgs(["serve", "/tmp/x", "--port", "-1"])).toThrow(
       /Invalid --port/,
     );
-    expect(() => parseServeArgs(["serve", "/tmp/x", "--port", "0"])).toThrow(
-      /Invalid --port/,
-    );
     expect(() => parseServeArgs(["serve", "/tmp/x", "--weird"])).toThrow(
       /Unknown flag/,
     );
@@ -44,12 +41,13 @@ describe("parseServeArgs edge paths", () => {
     expect(
       parseServeArgs(["serve", "/tmp/root", "--host", "127.0.0.1", "--port", "9"]),
     ).toEqual({ root: "/tmp/root", host: "127.0.0.1", port: 9 });
+    // 0 reaches listen(0); the kernel chooses the port.
+    expect(
+      parseServeArgs(["serve", "/tmp/root", "--host", "127.0.0.1", "--port", "0"]),
+    ).toEqual({ root: "/tmp/root", host: "127.0.0.1", port: 0 });
   });
 
-  it("mutation: rejects port 0; runCli entry guard runs on direct invocation", async () => {
-    expect(() => parseServeArgs(["serve", "/tmp/x", "--port", "0"])).toThrow(
-      /Invalid --port: 0/,
-    );
+  it("mutation: runCli entry guard runs on direct invocation", async () => {
     await expect(runCli(["serve"])).rejects.toThrow(/Usage: team-canvas serve/);
 
     const cliJs = path.resolve(

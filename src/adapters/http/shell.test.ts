@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   canvasPaletteDark,
   canvasPaletteLight,
-} from "../../sdk/canvas-tokens.js";
+} from "@team-canvas/human";
 import {
   editShellHtml,
   escapeHtml,

@@ -2,14 +2,19 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+// Paths inside this package. A packed install has no @team-canvas/* packages to resolve.
+import { startMcpStdioServer } from '../packages/mcp/dist/index.js'
+// Side-effect import: the shell depends on ontology by importing its entry.
+import '../packages/ontology/index.js'
 import {
   attachCleanShutdown,
   DEFAULT_HOST,
   DEFAULT_PORT,
   startHttpServer,
 } from './adapters/http/http-server.js'
-import { startMcpStdioServer } from './adapters/mcp/mcp-server.js'
+import { LocalFilesystemCanvasStore } from './adapters/store/local-fs-canvas-store.js'
 import { convertCanvasSource } from './app/convert/convert-canvas.js'
+import { createCanvasEditOps } from './app/edit/canvas-edit-ops.js'
 
 export const CLI_USAGE = `Usage: team-canvas serve <root> [--host <host>] [--port <port>]
        team-canvas mcp <canvases-root>
@@ -30,6 +35,12 @@ export type ParsedConvertArgs = {
   paths: string[]
 }
 
+/** Handle for a directory the CLI is serving. `close` stops that process. */
+export type ServedDirectory = {
+  url: string
+  close(): Promise<void>
+}
+
 function takeFlagValue(rest: string[], i: number, flag: string): [string, number] {
   const value = rest[i + 1]
   if (!value) throw new Error(`${flag} requires a value`)
@@ -38,7 +49,8 @@ function takeFlagValue(rest: string[], i: number, flag: string): [string, number
 
 function parsePortValue(value: string): number {
   const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  // 0 is listen(0): the kernel picks a free port. Anything else non-positive is a typo.
+  if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error(`Invalid --port: ${value}`)
   }
   return parsed
@@ -166,21 +178,30 @@ export async function runConvert(from: string, paths: string[]): Promise<{
   return { converted, unchanged }
 }
 
-export async function runCli(argv: string[] = process.argv.slice(2)): Promise<void> {
+export async function runCli(
+  argv: string[] = process.argv.slice(2),
+): Promise<ServedDirectory | void> {
   const cmd = argv[0]
   if (cmd === 'mcp') {
     const { root } = parseMcpArgs(argv)
+    const store = LocalFilesystemCanvasStore(root)
     // stderr only — stdout is the MCP JSON-RPC channel
     console.error(`team-canvas mcp stdio (root ${root})`)
-    await startMcpStdioServer({ root })
+    await startMcpStdioServer({ ops: createCanvasEditOps(store) })
     return
   }
   if (cmd === 'serve') {
     const { root, host, port } = parseServeArgs(argv)
     const server = await startHttpServer({ root, host, port })
-    attachCleanShutdown(server)
+    const detach = attachCleanShutdown(server)
     console.log(`team-canvas listening on http://${host}:${server.port} (root ${root})`)
-    return
+    return {
+      url: server.url,
+      close() {
+        detach()
+        return server.close()
+      },
+    }
   }
   if (cmd === 'convert') {
     const { from, paths } = parseConvertArgs(argv)
