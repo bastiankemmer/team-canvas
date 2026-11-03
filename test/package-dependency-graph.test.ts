@@ -12,34 +12,27 @@ const repoRoot = path.resolve(
   "..",
 );
 
-const SHELL_ON_ALL_FOUR = [
+const SHELL_ON_LAYERS = [
   'import "@team-canvas/ontology";',
-  'import "@team-canvas/ai";',
   'import "@team-canvas/human";',
   'import "@team-canvas/mcp";',
 ].join("\n");
 
 function withShell(...files: SourceFile[]): string[] {
-  return dependencyViolations([{ path: "src/cli.ts", source: SHELL_ON_ALL_FOUR }, ...files]);
+  return dependencyViolations([{ path: "src/cli.ts", source: SHELL_ON_LAYERS }, ...files]);
 }
 
 describe("layer package import graph", () => {
-  it("rejects an import outside the allowed package edges, and a shell that misses any layer, so ontology, ai, human, and mcp stay behind the composition root", () => {
+  it("rejects an import outside the allowed package edges, and a shell that misses any layer, so ontology, human, and mcp stay behind the composition root", () => {
     expect(
-      withShell({ path: "packages/ontology/index.js", source: 'import "@team-canvas/ai";' }),
-    ).toEqual(["ontology depends on ai"]);
+      withShell({ path: "packages/ontology/index.js", source: 'import "@team-canvas/human";' }),
+    ).toEqual(["ontology depends on human"]);
     expect(
       withShell({ path: "packages/human/index.ts", source: 'import "@team-canvas/mcp";' }),
     ).toEqual(["human depends on mcp"]);
     expect(
       withShell({ path: "packages/mcp/index.ts", source: 'import "../../src/cli.js";' }),
     ).toEqual(["mcp depends on shell"]);
-    expect(
-      withShell({
-        path: "packages/ai/index.js",
-        source: 'export { answer } from "@team-canvas/human";',
-      }),
-    ).toEqual(["ai depends on human"]);
     expect(
       withShell({
         path: "packages/human/index.ts",
@@ -61,11 +54,11 @@ describe("layer package import graph", () => {
       }),
     ).toEqual(["ontology depends on mcp"]);
     expect(
-      withShell({ path: "packages/ontology/index.js", source: 'import "../ai/index.js";' }),
-    ).toEqual(["ontology depends on ai"]);
+      withShell({ path: "packages/ontology/index.js", source: 'import "../human/index.ts";' }),
+    ).toEqual(["ontology depends on human"]);
 
-    for (const missing of ["ontology", "ai", "human", "mcp"] as const) {
-      const source = (["ontology", "ai", "human", "mcp"] as const)
+    for (const missing of ["ontology", "human", "mcp"] as const) {
+      const source = (["ontology", "human", "mcp"] as const)
         .filter((layer) => layer !== missing)
         .map((layer) => `import "@team-canvas/${layer}";`)
         .join("\n");
@@ -77,7 +70,7 @@ describe("layer package import graph", () => {
     // Test files, package.json fields, and path.join strings are not import edges.
     expect(
       dependencyViolations([
-        { path: "src/cli.test.ts", source: SHELL_ON_ALL_FOUR },
+        { path: "src/cli.test.ts", source: SHELL_ON_LAYERS },
         {
           path: "packages/ontology/package.json",
           source: '{ "dependencies": { "@team-canvas/ai": "0.0.0" } }',
@@ -89,7 +82,6 @@ describe("layer package import graph", () => {
         },
       ]),
     ).toEqual([
-      "shell does not depend on ai",
       "shell does not depend on human",
       "shell does not depend on mcp",
       "shell does not depend on ontology",
@@ -98,14 +90,9 @@ describe("layer package import graph", () => {
     expect(withShell()).toEqual([]);
     expect(
       withShell(
-        { path: "packages/ai/index.js", source: 'import "@team-canvas/ontology";' },
         {
           path: "packages/mcp/index.ts",
-          source: [
-            'import "@team-canvas/ontology";',
-            'import "@team-canvas/ai";',
-            'import "@team-canvas/human";',
-          ].join("\n"),
+          source: ['import "@team-canvas/ontology";', 'import "@team-canvas/human";'].join("\n"),
         },
         {
           path: "packages/human/index.ts",

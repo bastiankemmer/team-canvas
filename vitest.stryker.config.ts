@@ -10,7 +10,6 @@ export default defineConfig({
     alias: {
       "@team-canvas/mcp": path.join(repoRoot, "packages/mcp/index.ts"),
       "@team-canvas/ontology": path.join(repoRoot, "packages/ontology/index.js"),
-      "@team-canvas/ai": path.join(repoRoot, "packages/ai/index.js"),
     },
   },
   test: {
@@ -25,8 +24,6 @@ export default defineConfig({
       "test/collect-fact-turtle.test.ts",
       "test/collect-subject-turtle.test.ts",
       "test/mcp-collect-turtle.test.ts",
-      "test/area-read.test.ts",
-      "test/mcp-read-area.test.ts",
       "test/fact-declaration.test.ts",
       "test/fact-vector-score.test.ts",
       "test/mcp-collect-query-turtle.test.ts",

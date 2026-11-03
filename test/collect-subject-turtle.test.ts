@@ -110,6 +110,7 @@ describe("collect facts by subject as Turtle", () => {
     expect(toolNames).toContain("check_canvas");
     expect(toolNames).toHaveLength(24);
     expect(toolNames).toContain("collect");
-    expect(toolNames).toContain("read-area");
+    expect(toolNames).toContain("read_facts");
+    expect(toolNames).not.toContain("read-area");
   });
 });

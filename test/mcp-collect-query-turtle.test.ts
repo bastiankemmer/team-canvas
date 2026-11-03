@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { callMcpTool } from "@team-canvas/mcp";
-import * as ai from "../packages/ai/index.js";
 import { collect, collectBySubject, extractFacts, score } from "../packages/ontology/index.js";
 import { startHttpServer } from "../src/adapters/http/http-server.js";
 import { LocalFilesystemCanvasStore } from "../src/adapters/store/local-fs-canvas-store.js";
@@ -200,7 +199,7 @@ describe("MCP collect by query", () => {
       await server.close();
     }
 
-    expect(ai).not.toHaveProperty("projectCanvas");
+    expect(existsSync(path.join(repoRoot, "packages", "ai"))).toBe(false);
     expect(existsSync(path.join(repoRoot, ".vectors.json"))).toBe(false);
     expect(existsSync(path.join(root, ".vectors.json"))).toBe(false);
     const rootPkg = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
@@ -212,7 +211,7 @@ describe("MCP collect by query", () => {
       "react-dom",
       "typescript",
     ]);
-    for (const name of ["ontology", "ai", "human", "mcp"]) {
+    for (const name of ["ontology", "human", "mcp"]) {
       const layer = JSON.parse(
         readFileSync(path.join(repoRoot, "packages", name, "package.json"), "utf8"),
       ) as { dependencies?: unknown };

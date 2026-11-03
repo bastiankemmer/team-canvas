@@ -135,6 +135,17 @@ export function render(fact) {
 }
 
 /**
+ * Turtle for every literal fact in one canvas, in document order.
+ * A canvas with no fact is an empty string, so the caller does not get a bare prefix.
+ * This does not search other canvases and does not write a file.
+ */
+export function readFacts(source) {
+  const blocks = extractFacts(source).map(factTriples);
+  if (blocks.length === 0) return "";
+  return PREFIX + blocks.join("");
+}
+
+/**
  * Turtle for the literal fact with this id.
  * `sources` are canvas texts the caller already read, so this module never opens the store.
  * A missing id is an empty Turtle document: no invented fact, no derived file.

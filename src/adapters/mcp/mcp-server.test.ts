@@ -82,6 +82,7 @@ describe("mcp stdio server", () => {
       "list_canvases",
       "create_canvas",
       "read_source",
+      "read_facts",
       "read_sources",
       "write_source",
       "replace_in_source",
@@ -102,7 +103,6 @@ describe("mcp stdio server", () => {
       "escalate_topic",
       "list_changes",
       "collect",
-      "read-area",
     ]);
 
     const list = await callMcpTool(ops, "list_canvases");
@@ -350,6 +350,7 @@ describe("mcp stdio server", () => {
       "list_canvases",
       "create_canvas",
       "read_source",
+      "read_facts",
       "read_sources",
       "write_source",
       "replace_in_source",
@@ -370,7 +371,6 @@ describe("mcp stdio server", () => {
       "escalate_topic",
       "list_changes",
       "collect",
-      "read-area",
     ]);
     expect(
       MCP_TOOL_DEFS.find((t) => t.name === "read_source")?.inputSchema,

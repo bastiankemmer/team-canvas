@@ -4,9 +4,8 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 // Paths inside this package. A packed install has no @team-canvas/* packages to resolve.
 import { startMcpStdioServer } from '../packages/mcp/dist/index.js'
-// Side-effect imports: the shell depends on ontology and ai by importing their entries.
+// Side-effect import: the shell depends on ontology by importing its entry.
 import '../packages/ontology/index.js'
-import '../packages/ai/index.js'
 import {
   attachCleanShutdown,
   DEFAULT_HOST,
@@ -188,13 +187,7 @@ export async function runCli(
     const store = LocalFilesystemCanvasStore(root)
     // stderr only — stdout is the MCP JSON-RPC channel
     console.error(`team-canvas mcp stdio (root ${root})`)
-    await startMcpStdioServer({
-      // The derived file stays in this process. mcp calls areaRead with readDerived.
-      ops: {
-        ...createCanvasEditOps(store),
-        readDerived: (id) => store.readDerived(id),
-      },
-    })
+    await startMcpStdioServer({ ops: createCanvasEditOps(store) })
     return
   }
   if (cmd === 'serve') {

@@ -2,13 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 
-type Layer = "ontology" | "ai" | "human" | "mcp" | "shell";
+type Layer = "ontology" | "human" | "mcp" | "shell";
 
-const LAYERS: readonly Layer[] = ["ontology", "ai", "human", "mcp", "shell"];
+const LAYERS: readonly Layer[] = ["ontology", "human", "mcp", "shell"];
 
 const PACKAGE_ROOT: Record<Layer, string> = {
   ontology: "packages/ontology",
-  ai: "packages/ai",
   human: "packages/human",
   mcp: "packages/mcp",
   shell: "src",
@@ -16,14 +15,13 @@ const PACKAGE_ROOT: Record<Layer, string> = {
 
 /**
  * Edges that may exist. Shell edges are required; every other allowed edge is optional.
- * Ontology has none. AI may reach ontology. Human has none. MCP may reach the other three, not the shell.
+ * Ontology has none. Human has none. MCP may reach ontology and human, not the shell.
  */
 const ALLOWED: Record<Layer, readonly Layer[]> = {
   ontology: [],
-  ai: ["ontology"],
   human: [],
-  mcp: ["ontology", "ai", "human"],
-  shell: ["ontology", "ai", "human", "mcp"],
+  mcp: ["ontology", "human"],
+  shell: ["ontology", "human", "mcp"],
 };
 
 export type SourceFile = { path: string; source: string };
@@ -56,7 +54,7 @@ function layerOf(filePath: string): Layer | null {
 function targetLayer(fromFile: string, specifier: string): Layer | null {
   if (specifier.startsWith("@team-canvas/")) {
     const name = specifier.slice("@team-canvas/".length).split("/")[0];
-    if (name === "ontology" || name === "ai" || name === "human" || name === "mcp") {
+    if (name === "ontology" || name === "human" || name === "mcp") {
       return name;
     }
     return null;

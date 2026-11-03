@@ -24,6 +24,7 @@ const CURRENT_TOOLS = [
   "list_canvases",
   "create_canvas",
   "read_source",
+  "read_facts",
   "read_sources",
   "write_source",
   "replace_in_source",
@@ -44,7 +45,6 @@ const CURRENT_TOOLS = [
   "escalate_topic",
   "list_changes",
   "collect",
-  "read-area",
 ];
 
 const CANVAS_ID = "notes/alpha";
@@ -93,7 +93,7 @@ function expectClientSession(messages: unknown[]) {
 }
 
 describe("mcp package tools", () => {
-  it("keeps the existing MCP tools and returns notes/alpha from the store the shell was given, so collect and read-area do not replace a client call or become an HTTP route", async () => {
+  it("keeps the existing MCP tools and returns notes/alpha from the store the shell was given, so collect does not replace a client call or become an HTTP route", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-pkg-"));
     await mkdir(path.join(root, "notes"));
     await writeFile(path.join(root, "notes", "alpha.canvas.tsx"), SOURCE, "utf8");
@@ -131,7 +131,7 @@ describe("mcp package tools", () => {
 
     const server = await startHttpServer({ root, host: "127.0.0.1", port: 0 });
     try {
-      for (const route of ["/collect", "/api/collect", "/read-area", "/api/read-area"]) {
+      for (const route of ["/collect", "/api/collect"]) {
         for (const method of ["GET", "POST"] as const) {
           const response = await fetch(`${server.url}${route}`, { method });
           expect(response.status, `${method} ${route}`).toBe(404);
@@ -142,7 +142,7 @@ describe("mcp package tools", () => {
       await server.close();
     }
 
-    // Ontology and human stay closed, ai may reach ontology only, and mcp does not reach the shell.
+    // Ontology and human stay closed, and mcp does not reach the shell.
     expect(dependencyViolations(productionSources(repoRoot))).toEqual([]);
   });
 });

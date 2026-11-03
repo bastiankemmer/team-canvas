@@ -12,13 +12,12 @@ const repoRoot = path.resolve(
 
 const LAYER_PACKAGES = [
   "@team-canvas/ontology",
-  "@team-canvas/ai",
   "@team-canvas/human",
   "@team-canvas/mcp",
 ] as const;
 
 describe("workspace layer packages", () => {
-  it("resolves ontology, ai, human, and mcp in the installed workspace, and the team-canvas bin still starts the CLI, so the split does not replace the command that runs the process", () => {
+  it("resolves ontology, human, and mcp in the installed workspace, and the team-canvas bin still starts the CLI, so the split does not replace the command that runs the process", () => {
     // Resolve from inside the root package so Node uses the workspace links and the root's own exports.
     const require = createRequire(path.join(repoRoot, "package.json"));
     const meta = spawnSync(

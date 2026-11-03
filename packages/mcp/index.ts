@@ -1,24 +1,16 @@
 import type { Readable, Writable } from "node:stream";
 // Keeps the layer edge on this source file. Erased from dist; see the load below.
 import type {} from "../ontology/index.js";
-import type {} from "../ai/index.js";
 
 // Compiled to dist/index.js, one directory deeper than this file, so a relative
-// specifier here would miss ontology and ai. A packed install has no @team-canvas/* name.
-const { collect, collectBySubject, collectByQuery } = (await import(
+// specifier here would miss ontology. A packed install has no @team-canvas/* name.
+const { collect, collectBySubject, collectByQuery, readFacts } = (await import(
   new URL("../../ontology/index.js", import.meta.url).href,
 )) as {
   collect: (sources: readonly string[], factId: string) => string;
   collectBySubject: (sources: readonly string[], subject: string) => string;
   collectByQuery: (sources: readonly string[], query: string, threshold: number) => string;
-};
-const { areaRead } = (await import(
-  new URL("../../ai/index.js", import.meta.url).href,
-)) as {
-  areaRead: (
-    areaId: string,
-    read: (areaId: string) => string | Promise<string>,
-  ) => string | Promise<string>;
+  readFacts: (source: string) => string;
 };
 
 /** Who/why/topic on a write. Same shape the shell's change log accepts. */
@@ -102,8 +94,6 @@ type McpCanvasOps = {
     opts?: { folder?: boolean; match?: string },
     meta?: WriteMeta,
   ): Promise<unknown>;
-  /** Whole derived file for a canvas id. The shell opens it; this package does not. */
-  readDerived(areaId: string): Promise<string>;
 };
 
 const TOPIC_STATUSES: TopicStatus[] = ["open", "escalated", "settled"];
@@ -182,6 +172,16 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "read_source",
     description: "Read full .canvas.tsx source for an id",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "read_facts",
+    description:
+      "Return Turtle for the literal facts on one canvas. The component text stays out, and other canvases are not searched. Use search_source to search that component. Use collect for a subject or a query across one project.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" } },
@@ -466,18 +466,6 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
       required: ["project"],
     },
   },
-  {
-    name: "read-area",
-    description:
-      "Return the whole derived file for a canvas id. The id is not a heading, so this is the whole file, not a slice.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Canvas id." },
-      },
-      required: ["id"],
-    },
-  },
 ];
 
 export type McpToolResult = {
@@ -590,6 +578,11 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       metaFrom(args),
     ),
   read_source: (ops, args) => ops.readSource(requireString(args, "id")),
+  read_facts: async (ops, args) => {
+    const source = await ops.readSource(requireString(args, "id"));
+    if (typeof source !== "string") throw new Error("Canvas source is not text");
+    return readFacts(source);
+  },
   read_sources: (ops, args) => ops.readSources(requireStringList(args, "ids")),
   write_source: async (ops, args) => {
     const id = requireString(args, "id");
@@ -695,8 +688,6 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     if (factId !== undefined) return collect(sources, factId);
     return collectBySubject(sources, subject as string);
   },
-  "read-area": async (ops, args) =>
-    areaRead(requireString(args, "id"), (areaId) => ops.readDerived(areaId)),
 };
 
 /** Invoke shared edit ops by MCP tool name. */

@@ -29,7 +29,6 @@
     "packages/mcp",
     "packages/mcp/dist",
     "packages/ontology",
-    "packages/ai",
     "src/client",
     "!**/*.test.*"
   ],

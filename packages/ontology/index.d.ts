@@ -8,6 +8,8 @@ export type Fact = {
 
 export function extractFacts(source: string): Fact[];
 export function render(fact: Fact): string;
+/** Turtle for every literal fact in this one canvas, in document order. "" when it has none. */
+export function readFacts(source: string): string;
 export function collect(sources: readonly string[], factId: string): string;
 export function collectBySubject(sources: readonly string[], subject: string): string;
 /** Facts at or above the threshold inside these sources. Rare tokens in that set rank higher. Score descending, then id ascending. "" when none qualify. */

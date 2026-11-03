@@ -3,7 +3,6 @@ import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import * as ai from "../packages/ai/index.js";
 import * as human from "../packages/human/index.ts";
 import { collectByQuery, extractFacts, score, vector, type Fact } from "../packages/ontology/index.js";
 import { LocalFilesystemCanvasStore } from "../src/adapters/store/local-fs-canvas-store.js";
@@ -88,7 +87,6 @@ describe("fact vector score", () => {
 
     expect(human).not.toHaveProperty("vector");
     expect(human).not.toHaveProperty("score");
-    expect(ai).not.toHaveProperty("projectCanvas");
 
     const root = await mkdtemp(path.join(tmpdir(), "team-canvas-vector-"));
     const store = LocalFilesystemCanvasStore(root);
