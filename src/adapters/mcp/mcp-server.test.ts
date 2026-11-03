@@ -626,7 +626,7 @@ describe("mcp stdio server", () => {
     expect(byName.check_canvas).toEqual({
       name: "check_canvas",
       description:
-        "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export",
+        "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export. A canvas with no literal Fact also gets a warning, because collect and read_facts cannot see it. An id ending in index, roadmap, brief, research, or phase-N is exempt",
       inputSchema: {
         type: "object",
         properties: idProp,
@@ -1552,7 +1552,7 @@ describe("parseMcpArgs", () => {
 
     const good = await callMcpTool(ops, "check_canvas", { id: "demo" });
     expect(good.isError).toBe(false);
-    expect(JSON.parse(good.content[0]!.text)).toEqual({ ok: true, id: "demo" });
+    expect(JSON.parse(good.content[0]!.text)).toMatchObject({ ok: true, id: "demo" });
 
     await callMcpTool(ops, "replace_in_source", { id: "demo", old_string: "</div>", new_string: "" });
     const bad = JSON.parse((await callMcpTool(ops, "check_canvas", { id: "demo" })).content[0]!.text);
@@ -1561,6 +1561,52 @@ describe("parseMcpArgs", () => {
 
     expect((await callMcpTool(ops, "check_canvas", { id: "nope" })).isError).toBe(true);
     expect((await callMcpTool(ops, "check_canvas", {})).isError).toBe(true);
+  });
+
+  it("check_canvas warns when a canvas has no literal Fact, so an agent learns collect cannot see it, while a canvas with a Fact and the index and epic status canvases stay quiet", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "team-canvas-mcp-check-fact-"));
+    const ops = createCanvasEditOps(LocalFilesystemCanvasStore(root), { requireLease: false });
+    const plain = 'import { Text } from "team-canvas/canvas";\nexport default function A() { return <Text>hi</Text> }\n';
+    const withFact = [
+      'import { Fact, Text } from "team-canvas/canvas";',
+      "export default function B() {",
+      '  return <><Fact id="b-rule" subject="b" claim="B has a rule." area="notes/with-fact" heading="Rule" /><Text>B has a rule.</Text></>;',
+      "}",
+      "",
+    ].join("\n");
+    const dynamicFact = [
+      'import { Fact } from "team-canvas/canvas";',
+      'const id = "c-rule";',
+      'export default function C() { return <Fact id={id} subject="c" claim="C." area="notes/dynamic" heading="C" /> }',
+      "",
+    ].join("\n");
+    await mkdir(path.join(root, "notes"), { recursive: true });
+    await writeFile(path.join(root, "notes", "plain.canvas.tsx"), plain, "utf8");
+    await writeFile(path.join(root, "notes", "with-fact.canvas.tsx"), withFact, "utf8");
+    await writeFile(path.join(root, "notes", "dynamic.canvas.tsx"), dynamicFact, "utf8");
+    await writeFile(path.join(root, "notes", "index.canvas.tsx"), plain, "utf8");
+    await writeFile(path.join(root, "index.canvas.tsx"), plain, "utf8");
+    for (const name of ["roadmap", "brief", "research", "phase-12", "phase-x", "my-roadmap"]) {
+      await writeFile(path.join(root, "notes", `${name}.canvas.tsx`), plain, "utf8");
+    }
+
+    const check = async (id: string) =>
+      JSON.parse((await callMcpTool(ops, "check_canvas", { id })).content[0]!.text);
+
+    const warned = await check("notes/plain");
+    expect(warned).toMatchObject({ ok: true, id: "notes/plain" });
+    expect(warned.warning).toContain("collect and read_facts return nothing");
+    // A Fact whose id is a variable is ignored by collect, so it still warns.
+    expect((await check("notes/dynamic")).warning).toContain("No literal <Fact>");
+    expect(await check("notes/with-fact")).toEqual({ ok: true, id: "notes/with-fact" });
+    expect(await check("notes/index")).toEqual({ ok: true, id: "notes/index" });
+    expect(await check("index")).toEqual({ ok: true, id: "index" });
+    for (const name of ["roadmap", "brief", "research", "phase-12"]) {
+      expect(await check(`notes/${name}`)).toEqual({ ok: true, id: `notes/${name}` });
+    }
+    // Only the whole last segment is exempt, so a lookalike name still warns.
+    expect((await check("notes/phase-x")).warning).toContain("No literal <Fact>");
+    expect((await check("notes/my-roadmap")).warning).toContain("No literal <Fact>");
   });
 
   it("@task-2: list_links returns the same JSON as listLinks, errors with the ops message, and describes outgoing canvas ids plus read_source and search_source", async () => {

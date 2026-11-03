@@ -4,9 +4,10 @@ import type {} from "../ontology/index.js";
 
 // Compiled to dist/index.js, one directory deeper than this file, so a relative
 // specifier here would miss ontology. A packed install has no @team-canvas/* name.
-const { collect, collectBySubject, collectByQuery, readFacts } = (await import(
+const { collect, collectBySubject, collectByQuery, extractFacts, readFacts } = (await import(
   new URL("../../ontology/index.js", import.meta.url).href,
 )) as {
+  extractFacts: (source: string) => unknown[];
   collect: (sources: readonly string[], factId: string) => string;
   collectBySubject: (sources: readonly string[], subject: string) => string;
   collectByQuery: (sources: readonly string[], query: string, threshold: number) => string;
@@ -245,7 +246,7 @@ export const MCP_TOOL_DEFS: McpToolDef[] = [
   {
     name: "check_canvas",
     description:
-      "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export",
+      "Check that a canvas still builds. Returns { ok: true } or { ok: false, error } with line:col messages. Call it after write_source, replace_in_source or fill_slots to catch syntax errors, bad imports and a missing default export. A canvas with no literal Fact also gets a warning, because collect and read_facts cannot see it. An id ending in index, roadmap, brief, research, or phase-N is exempt",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string" } },
@@ -552,6 +553,12 @@ type ToolHandler = (
 
 type SourceEntry = { source: string } | { error: string };
 
+// Link lists and epic status canvases. Their lasting claims live on a knowledge or reference canvas.
+const NO_FACT_EXEMPT = /^(index|roadmap|brief|research|phase-\d+)$/;
+
+const NO_FACT_WARNING =
+  "No literal <Fact> on this canvas, so collect and read_facts return nothing for it. Add one Fact per rule an agent should follow, or leave it if the page is only for people.";
+
 // Canvas texts in one project only. Never scrape other projects in the store.
 async function canvasSourceTexts(ops: McpCanvasOps, project: string): Promise<string[]> {
   if (!project) throw new Error("project must be a non-empty string");
@@ -607,7 +614,16 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       meta,
     );
   },
-  check_canvas: (ops, args) => ops.checkCanvas(requireString(args, "id")),
+  check_canvas: async (ops, args) => {
+    const id = requireString(args, "id");
+    const result = await ops.checkCanvas(id);
+    // ponytail: exemption by last id segment. A page that is only for people still warns.
+    // Upgrade: an explicit opt-out on the canvas if those pages make the warning noise.
+    if (NO_FACT_EXEMPT.test(id.slice(id.lastIndexOf("/") + 1))) return result;
+    const source = await ops.readSource(id);
+    if (typeof source !== "string" || extractFacts(source).length > 0) return result;
+    return { ...(result as object), warning: NO_FACT_WARNING };
+  },
   search_source: (ops, args) =>
     ops.searchSource(requireString(args, "id"), requireString(args, "query")),
   list_links: (ops, args) => ops.listLinks(requireString(args, "id")),
