@@ -35,16 +35,21 @@ function run(command: string, args: string[], cwd: string): { stdout: string; st
 }
 
 function packFilename(stdout: string): string {
-  const start = stdout.indexOf("[");
+  // npm 11 prints a one-element array. npm 12 prints { "team-canvas": { filename } }.
+  const start = stdout.search(/[\[{]/);
   if (start < 0) throw new Error(`npm pack did not return JSON:\n${stdout}`);
   const parsed: unknown = JSON.parse(stdout.slice(start));
+  const entry = Array.isArray(parsed)
+    ? parsed[0]
+    : parsed && typeof parsed === "object"
+      ? (parsed as { "team-canvas"?: unknown })["team-canvas"]
+      : undefined;
   const filename =
-    Array.isArray(parsed) &&
-    parsed[0] &&
-    typeof parsed[0] === "object" &&
-    "filename" in parsed[0] &&
-    typeof parsed[0].filename === "string"
-      ? parsed[0].filename
+    entry &&
+    typeof entry === "object" &&
+    "filename" in entry &&
+    typeof entry.filename === "string"
+      ? entry.filename
       : "";
   if (!filename) throw new Error(`npm pack JSON missing filename:\n${stdout}`);
   return filename;
