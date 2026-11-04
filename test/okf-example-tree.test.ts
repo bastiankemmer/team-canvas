@@ -70,8 +70,8 @@ const SKILL_PATH = "/Users/basti/.cursor/skills/okf/SKILL.md";
 const LIBRARY_PNG_SHA1 = "9b18c9701716a98e5446f6d6f89020713a3492ec";
 /** sha1 of the README HTTP table and the MCP tool lines, so a wording edit fails. */
 const HTTP_TABLE_SHA1 = "568d24a5f2b1caae8db100e7017f0b821b412628";
-const README_MCP_TOOLS_SHA1 = "33618367cdcea43e0e128fa88987e34d7c57218c";
-const GETTING_STARTED_MCP_TOOLS_SHA1 = "74ea23b33367ab9266cc9319dd9ff53f6f9c2a16";
+const README_MCP_TOOLS_SHA1 = "073836b2465a724638c62d2037b6a38be230f03f";
+const GETTING_STARTED_MCP_TOOLS_SHA1 = "74457d14e2279d7ad0e3b85183e0fadea83af9eb";
 
 /** Flat id each moved canvas used before this tree. */
 const MOVED: Record<string, string> = {

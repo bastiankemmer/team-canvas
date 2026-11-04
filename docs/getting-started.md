@@ -1,6 +1,6 @@
 # Getting started
 
-team-canvas turns a `.canvas.tsx` file (one React component) into a page your team can open and share. Agents write the source. This page takes you from install to the first canvas.
+team-canvas turns a `.canvas.tsx` file (one React component) into a page your team can open and share. People read the page. Agents read a fact on it, and open the source only to change the page. This page takes you from install to the first canvas.
 
 ## 1. Install and run the server
 
@@ -12,7 +12,7 @@ mkdir canvases
 team-canvas serve ./canvases            # http://0.0.0.0:3847
 ```
 
-No global install? `npx team-canvas serve ./canvases` does the same. To import `team-canvas/canvas` in your own React app (see step 7), install it in that project instead: `npm install team-canvas react react-dom`.
+No global install? `npx team-canvas serve ./canvases` does the same. To import `team-canvas/canvas` in your own React app (see step 8), install it in that project instead: `npm install team-canvas react react-dom`.
 
 `./canvases` is the folder the server reads. Use `--host 127.0.0.1` to keep it on your machine and `--port` to change the port. There is no login, so read the security note in the [README](../README.md#security) before exposing it.
 
@@ -57,7 +57,35 @@ The example is served with `team-canvas serve examples/okf`. Those ids start at 
 
 ![Code view with the source next to the live preview](images/code-view.png)
 
-## 6. Let an AI agent edit canvases
+## 6. A fact is one sentence
+
+A fact is a literal `<Fact>` tag. It does not render. The `<Text>` next to it is what a person reads. Every attribute is a string literal. A variable or a template is ignored.
+
+```tsx
+import { Fact, H1, Stack, Text } from "team-canvas/canvas";
+
+export default function Writes() {
+  return (
+    <Stack gap={12} style={{ padding: 16 }}>
+      <H1>Writes</H1>
+      <Fact
+        id="write-needs-lease"
+        subject="settlement"
+        claim="Every canvas write needs an actor holding the lease."
+        area="notes/writes"
+        heading="Writes"
+      />
+      <Text>Every canvas write needs an actor holding the lease.</Text>
+    </Stack>
+  );
+}
+```
+
+`area` is the canvas id. An agent that only needs the rule calls `read_facts` with that id and gets Turtle, not the component. `collect` does the same across one project: pass `project` and exactly one of `fact_id`, `subject`, or `query` plus `threshold` (0 to 1). A query ranks a rare word above a word that is on every fact. No HTTP route serves either call.
+
+A canvas with no literal fact is invisible to those calls. `check_canvas` warns about that, except when the last segment of the id is `index`, `roadmap`, `brief`, `research`, or `phase-N`.
+
+## 7. Let an AI agent edit canvases
 
 The same edit operations are available to agents over MCP (stdio):
 
@@ -72,7 +100,7 @@ The same edit operations are available to agents over MCP (stdio):
 }
 ```
 
-Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `move`, `list_links`, `backlinks`, `search_linked`. `create_canvas` takes an `id` and an optional `source`; without a source it writes a starter canvas, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Reading whole files wastes context. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.
+Tools: `list_canvases`, `create_canvas`, `read_source`, `read_facts`, `read_sources`, `write_source`, `replace_in_source`, `check_canvas`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `move`, `list_links`, `backlinks`, `search_linked`, `collect`. Ask with `collect` or `read_facts` before `read_source`. `read_source` is the component, for an edit or for anything the facts leave out. `create_canvas` takes an `id` and an optional `source`; without a source it writes a starter canvas, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Call `check_canvas` after an edit. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.
 
 When several agents share one store, a write needs a lease. Reads never do.
 
@@ -80,11 +108,11 @@ When several agents share one store, a write needs a lease. Reads never do.
 
 A lease lasts 5 minutes, or the `ttl_seconds` you pass, and never longer than 1 hour. Calling `acquire_lease` again while you hold it renews that time. If it expires first, the canvas is free and the next `acquire_lease` takes it; nobody is told, because a notice is sent only when someone releases. Agents can also tell each other what they are about to decide: `declare_intent`, `list_topics`, `escalate_topic` and `list_changes` find contradictions early, and a human settles them at `/settlement`. The README section "Agents that share a store" has the details.
 
-## 7. Use a canvas in a normal React app
+## 8. Use a canvas in a normal React app
 
 A canvas is a regular component, so it also works in your own Vite or TypeScript app. `team-canvas/canvas` resolves through the package exports, no alias needed. Outside the server, `useCanvasState` is plain in-memory state. See `examples/vite/vite.config.ts` in the repo.
 
-## 8. Move canvases from another canvas module
+## 9. Move canvases from another canvas module
 
 If your canvases import from a different module, rewrite them in place:
 

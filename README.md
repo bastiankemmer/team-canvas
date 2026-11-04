@@ -1,6 +1,6 @@
 # team-canvas
 
-A self-hosted server that renders `.canvas.tsx` files in the browser, so a team can view and share them. Agents write the canvas source. People use the rendered result. A canvas is one React component in one file that imports from `"team-canvas/canvas"`.
+A self-hosted server that renders `.canvas.tsx` files in the browser, so a team can view and share them. People read the rendered page. Agents read a literal `<Fact>` on that page and open the source only to change it. A canvas is one React component in one file that imports from `"team-canvas/canvas"`.
 
 ## Install
 
@@ -81,7 +81,7 @@ Planned:
 npx team-canvas mcp ./canvases          # stdio server
 ```
 
-Tools: `list_canvases`, `create_canvas`, `read_source`, `read_facts`, `read_sources`, `write_source`, `replace_in_source`, `check_canvas`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `move`, `list_links`, `backlinks`, `search_linked`, `collect`, and for agents that share a store `acquire_lease`, `release_lease`, `list_leases`, `declare_intent`, `list_topics`, `escalate_topic`, `list_changes`. Use `collect` and `read_facts` for claims, and `search_source` to keep context small instead of reading whole files. `replace_in_source` changes part of a canvas; `write_source` replaces the entire file. Call `check_canvas` after edits: it returns build errors as `line:col message`, and a warning when the canvas has no literal fact. `collect` and `read_facts` are MCP only.
+Tools: `list_canvases`, `create_canvas`, `read_source`, `read_facts`, `read_sources`, `write_source`, `replace_in_source`, `check_canvas`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `move`, `list_links`, `backlinks`, `search_linked`, `collect`, and for agents that share a store `acquire_lease`, `release_lease`, `list_leases`, `declare_intent`, `list_topics`, `escalate_topic`, `list_changes`. Ask with `collect` or `read_facts` before `read_source`. `collect` takes `project` and exactly one of `fact_id`, `subject`, or `query`. A query also takes `threshold` from 0 to 1, and a rare word outranks a word on every fact in that project. Both calls return Turtle and have no HTTP route. `read_source` is the component. `replace_in_source` changes part of a canvas; `write_source` replaces the entire file. Call `check_canvas` after edits: it returns build errors as `line:col message`, and a warning when the canvas has no literal fact. An id whose last segment is `index`, `roadmap`, `brief`, `research`, or `phase-N` does not warn. The HTTP check does not warn.
 
 `move` renames one canvas (`from`, `to`) or a folder (`folder: true`, or when `from` is only a folder). `match` is a filename glob (`*.canvas.tsx`, `*Test.canvas.tsx`) and moves only those canvases inside the folder. State files move with the canvas. Lease every source id and every new id first. CanvasLink targets are left as written.
 
@@ -129,10 +129,11 @@ Outside the server, `useCanvasState` is plain in-memory state.
 
 Ports and adapters, so storage and login can be swapped without touching the rest:
 
-- `CanvasStore` port (`src/ports`, adapters under `src/adapters/{store,auth,http,mcp}`): list, read and write source and state. Shipped adapter: local filesystem. New stores (FTP, Samba, S3, ...) only need to implement this port.
-- `Auth` port: shipped adapter `DisabledAuthAdapter` (no login, the default). Add your own for password or OIDC.
-- Shared edit operations (`src/app/edit`) are used by both the HTTP and the MCP adapters. `add_oriented` and `fill_slots` return `{ ok, id, slots }`, slots as `{ id, label }` in document order. Link following (`list_links`, `backlinks`, `search_linked`) returns the list, backlink, and search arrays.
-- The SDK (`src/sdk`) provides the `team-canvas/canvas` surface: layout, forms, charts, diff view, todo list, DAG layout and theme hooks.
+- `CanvasStore` port (`src/ports/canvas-store.ts`, shipped adapter `src/adapters/store`): list, read and write source and state. New stores (FTP, Samba, S3, ...) only need to implement this port.
+- `Auth` port (`src/ports/auth.ts`): shipped adapter `DisabledAuthAdapter` (no login, the default). Add your own for password or OIDC.
+- Shared edit operations (`src/app/edit`) are used by HTTP (`src/adapters/http`) and by MCP. `add_oriented` and `fill_slots` return `{ ok, id, slots }`, slots as `{ id, label }` in document order. Link following (`list_links`, `backlinks`, `search_linked`) returns the list, backlink, and search arrays.
+- `@team-canvas/human` (`packages/human`) is the `team-canvas/canvas` export: layout, forms, charts, diff view, todo list, DAG layout, theme hooks, and the `Fact` tag.
+- `@team-canvas/ontology` (`packages/ontology`) reads literal `Fact` tags and renders Turtle. `@team-canvas/mcp` (`packages/mcp`) exposes the tools, including `collect` and `read_facts`. `src/cli.ts` starts the server and the MCP process. There is no HTTP route for those two tools.
 
 ## Security
 

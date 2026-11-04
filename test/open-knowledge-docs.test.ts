@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-const GETTING_STARTED_AFTER_TOOLS =
-  ". `create_canvas` takes an `id` and an optional `source`; without a source it writes a starter canvas, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Reading whole files wastes context. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.";
+const GETTING_STARTED_TOOLS =
+  "Tools: `list_canvases`, `create_canvas`, `read_source`, `read_facts`, `read_sources`, `write_source`, `replace_in_source`, `check_canvas`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `move`, `list_links`, `backlinks`, `search_linked`, `collect`. Ask with `collect` or `read_facts` before `read_source`. `read_source` is the component, for an edit or for anything the facts leave out. `create_canvas` takes an `id` and an optional `source`; without a source it writes a starter canvas, and it fails if the id already exists. For small changes to a big canvas the agent should find the text with `search_source` and change it with `replace_in_source` (`id`, `old_string`, `new_string`, optional `replace_all`). It fails if the text is missing or matches more than once, so an edit never lands in the wrong place; `write_source` replaces the whole file and is for full rewrites. Call `check_canvas` after an edit. `add_oriented` and `fill_slots` return the same shape as the HTTP API: `{ ok, id, slots }`, where `slots` are the blanks still left, as `{ id, label }`.";
 
 describe("open knowledge docs", () => {
   it("@task-5: docs name the link HTTP routes and MCP tools, and the Open knowledge format roadmap item is gone", () => {
@@ -51,11 +51,9 @@ describe("open knowledge docs", () => {
     const tools = gettingStarted
       .split("\n")
       .find((line) => line.startsWith("Tools:"));
-    expect(tools).toBe(
-      "Tools: `list_canvases`, `create_canvas`, `read_source`, `write_source`, `replace_in_source`, `search_source`, `inspect_orientation`, `add_oriented`, `fill_slots`, `move`, `list_links`, `backlinks`, `search_linked`" +
-        GETTING_STARTED_AFTER_TOOLS,
-    );
-    expect(tools).not.toContain("check_canvas");
+    expect(tools).toBe(GETTING_STARTED_TOOLS);
+    expect(tools).toContain("`read_facts`");
+    expect(tools).toContain("`collect`");
 
     expect(roadmap).not.toContain("Open knowledge format");
   });
